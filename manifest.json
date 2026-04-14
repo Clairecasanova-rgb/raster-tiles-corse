@@ -131,6 +131,28 @@
       "blend_mode": "normal",
       "group": "Rasters importes",
       "visible_default": true
+    },
+    {
+      "name": "Montegroso-Test-RGB6",
+      "safe_name": "Montegroso-Test-RGB6",
+      "mode": "rgb",
+      "zoom_min": 14,
+      "zoom_max": 18,
+      "bounds": [
+        [
+          42.60299188963632,
+          9.42111934774898
+        ],
+        [
+          42.60648174516557,
+          9.425747553810119
+        ]
+      ],
+      "url_template": "./Montegroso-Test-RGB6/{z}/{x}/{y}.png",
+      "opacity": 0.7,
+      "blend_mode": "normal",
+      "group": "Rasters importes",
+      "visible_default": true
     }
   ]
 }
