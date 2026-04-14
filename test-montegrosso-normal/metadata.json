@@ -1,0 +1,22 @@
+{
+  "name": "test-montegrosso-normal",
+  "safe_name": "test-montegrosso-normal",
+  "mode": "rgb",
+  "zoom_min": 14,
+  "zoom_max": 18,
+  "bounds": [
+    [
+      42.61279680419882,
+      9.404743018817433
+    ],
+    [
+      42.61598433693402,
+      9.408540423979193
+    ]
+  ],
+  "url_template": "./test-montegrosso-normal/{z}/{x}/{y}.png",
+  "opacity": 0.7,
+  "blend_mode": "normal",
+  "group": "Rasters importes",
+  "visible_default": true
+}
