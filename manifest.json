@@ -263,6 +263,28 @@
       "blend_mode": "normal",
       "group": "Rasters importes",
       "visible_default": true
+    },
+    {
+      "name": "test-montegrosso-RGB",
+      "safe_name": "test-montegrosso-RGB",
+      "mode": "rgb",
+      "zoom_min": 14,
+      "zoom_max": 18,
+      "bounds": [
+        [
+          42.61279661041583,
+          9.404743241724601
+        ],
+        [
+          42.61598414315042,
+          9.408540646873815
+        ]
+      ],
+      "url_template": "./test-montegrosso-RGB/{z}/{x}/{y}.png",
+      "opacity": 0.7,
+      "blend_mode": "normal",
+      "group": "Rasters importes",
+      "visible_default": true
     }
   ]
 }
