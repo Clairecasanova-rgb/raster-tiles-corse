@@ -265,7 +265,7 @@
       "visible_default": true
     },
     {
-      "name": "test-montegrosso-RGB",
+      "name": "MonteGrosso2-RGB",
       "safe_name": "test-montegrosso-RGB",
       "mode": "rgb",
       "zoom_min": 14,
