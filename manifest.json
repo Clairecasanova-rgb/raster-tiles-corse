@@ -221,7 +221,7 @@
       "visible_default": true
     },
     {
-      "name": "test-montegrosso-normal",
+      "name": "MonteGrosso2-normal",
       "safe_name": "test-montegrosso-normal",
       "mode": "rgb",
       "zoom_min": 14,
