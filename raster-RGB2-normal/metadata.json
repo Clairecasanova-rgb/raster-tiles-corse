@@ -1,0 +1,22 @@
+{
+  "name": "raster-RGB2-normal",
+  "safe_name": "raster-RGB2-normal",
+  "mode": "rgb",
+  "zoom_min": 14,
+  "zoom_max": 18,
+  "bounds": [
+    [
+      42.371667100645354,
+      9.285860745135455
+    ],
+    [
+      42.381273406187795,
+      9.298501509997557
+    ]
+  ],
+  "url_template": "./raster-RGB2-normal/{z}/{x}/{y}.png",
+  "opacity": 0.7,
+  "blend_mode": "normal",
+  "group": "Rasters importes",
+  "visible_default": true
+}
