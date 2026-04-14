@@ -1,0 +1,22 @@
+{
+  "name": "cambia-hillshade",
+  "safe_name": "cambia-hillshade",
+  "mode": "hillshade",
+  "zoom_min": 14,
+  "zoom_max": 18,
+  "bounds": [
+    [
+      42.37166710012303,
+      9.285860744244294
+    ],
+    [
+      42.38127340566545,
+      9.298501509106277
+    ]
+  ],
+  "url_template": "./cambia-hillshade/{z}/{x}/{y}.png",
+  "opacity": 0.7,
+  "blend_mode": "normal",
+  "group": "Rasters importes",
+  "visible_default": true
+}
