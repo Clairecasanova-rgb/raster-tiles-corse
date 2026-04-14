@@ -89,7 +89,7 @@
       "visible_default": false
     },
     {
-      "name": "montegrosso-hillshade",
+      "name": "MonteGrosso1-hillshade",
       "safe_name": "montegrosso-hillshade",
       "mode": "hillshade",
       "zoom_min": 14,
@@ -177,7 +177,7 @@
       "visible_default": true
     },
     {
-      "name": "Ombrage",
+      "name": "MonteGrosso2-Ombrage",
       "safe_name": "Ombrage",
       "mode": "rgb",
       "zoom_min": 14,
