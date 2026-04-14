@@ -1,0 +1,26 @@
+{
+  "rasters": [
+    {
+      "name": "cambia-rgb",
+      "safe_name": "cambia-rgb",
+      "mode": "rgb",
+      "zoom_min": 14,
+      "zoom_max": 16,
+      "bounds": [
+        [
+          42.37166710026048,
+          9.285860744537402
+        ],
+        [
+          42.38127340580291,
+          9.29850150939942
+        ]
+      ],
+      "url_template": "./cambia-rgb/{z}/{x}/{y}.png",
+      "opacity": 0.8,
+      "blend_mode": "darken",
+      "group": "Rasters importes",
+      "visible_default": true
+    }
+  ]
+}
