@@ -521,6 +521,8 @@ async function renderPoints() {
   h += '<button class="btn btn-secondary btn-mini" id="pRefresh">Actualiser</button>';
   h += '<button class="btn btn-secondary btn-mini" id="pExportCsv">Export CSV</button>';
   h += '<button class="btn btn-secondary btn-mini" id="pExportGeo">Export GeoJSON</button>';
+  h += '<button class="btn btn-secondary btn-mini" id="pMove" disabled>Déplacer la sélection</button>';
+  h += '<button class="btn btn-secondary btn-mini" id="pCopy" disabled>Copier la sélection</button>';
   h += '<button class="btn btn-danger btn-mini" id="pBulkDelete" disabled>Supprimer la sélection</button>';
   h += '</div><div id="pointsTableArea"><div class="loader">Chargement…</div></div></div>';
   el.innerHTML = h;
@@ -530,6 +532,8 @@ async function renderPoints() {
   document.getElementById('pFilterPhoto').onchange = e => { pointsState.hasPhoto = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
   document.getElementById('pRefresh').onclick = () => loadPointsPage();
   document.getElementById('pBulkDelete').onclick = onBulkDeletePoints;
+  document.getElementById('pMove').onclick = () => onMoveOrCopyPoints('move');
+  document.getElementById('pCopy').onclick = () => onMoveOrCopyPoints('copy');
   document.getElementById('pExportCsv').onclick = () => exportPoints('csv');
   document.getElementById('pExportGeo').onclick = () => exportPoints('geojson');
   await loadPointsPage();
@@ -576,7 +580,10 @@ function renderPointsTable() {
       + '<td style="font-size:11px">' + escapeHtml(projetName) + '</td>'
       + '<td style="font-size:11px">' + fmtDate(p.created_at) + '</td>'
       + '<td>' + photo + '</td>'
-      + '<td class="actions"><button class="btn btn-mini btn-danger" data-delete-point="' + p.id + '">×</button></td>'
+      + '<td class="actions">'
+      + '<button class="btn btn-mini btn-secondary" data-edit-point="' + p.id + '">✎</button> '
+      + '<button class="btn btn-mini btn-danger" data-delete-point="' + p.id + '">×</button>'
+      + '</td>'
       + '</tr>';
   });
   h += '</tbody></table>';
@@ -588,6 +595,7 @@ function renderPointsTable() {
     + '</div>';
   area.innerHTML = h;
   area.querySelectorAll('button[data-delete-point]').forEach(b => b.onclick = () => onDeletePoint(parseInt(b.dataset.deletePoint)));
+  area.querySelectorAll('button[data-edit-point]').forEach(b => b.onclick = () => onEditPoint(parseInt(b.dataset.editPoint)));
   const prev = document.getElementById('pPrev'); if (prev) prev.onclick = () => { pointsState.page--; loadPointsPage(); };
   const next = document.getElementById('pNext'); if (next) next.onclick = () => { pointsState.page++; loadPointsPage(); };
   area.querySelectorAll('input.pCheck').forEach(cb => {
@@ -601,9 +609,53 @@ function renderPointsTable() {
   updateBulkDeleteBtn();
 }
 function updateBulkDeleteBtn() {
-  const btn = document.getElementById('pBulkDelete'); if (!btn) return;
-  btn.disabled = pointsState.selected.size === 0;
-  btn.textContent = pointsState.selected.size === 0 ? 'Supprimer la sélection' : 'Supprimer ' + pointsState.selected.size + ' point(s)';
+  const n = pointsState.selected.size;
+  const btnDel = document.getElementById('pBulkDelete');
+  const btnMov = document.getElementById('pMove');
+  const btnCop = document.getElementById('pCopy');
+  if (btnDel) { btnDel.disabled = n === 0; btnDel.textContent = n === 0 ? 'Supprimer la sélection' : 'Supprimer ' + n + ' point(s)'; }
+  if (btnMov) { btnMov.disabled = n === 0; btnMov.textContent = n === 0 ? 'Déplacer la sélection' : 'Déplacer ' + n + ' point(s)'; }
+  if (btnCop) { btnCop.disabled = n === 0; btnCop.textContent = n === 0 ? 'Copier la sélection' : 'Copier ' + n + ' point(s)'; }
+}
+
+function pickProjet(promptText) {
+  const list = projets.map(p => '  ' + p.id + ': ' + p.nom).join('\n');
+  const v = prompt(promptText + '\n\nID des projets disponibles :\n' + list, '');
+  if (!v) return null;
+  const pid = parseInt(v.trim());
+  if (isNaN(pid) || !projets.find(p => p.id === pid)) { showStatus('ID projet invalide', 'error'); return null; }
+  return pid;
+}
+
+async function onMoveOrCopyPoints(mode) {
+  const n = pointsState.selected.size;
+  if (n === 0) return;
+  const targetId = pickProjet((mode === 'move' ? 'Déplacer' : 'Copier') + ' ' + n + ' point(s) vers quel projet ?');
+  if (targetId === null) return;
+  const targetName = projets.find(p => p.id === targetId).nom;
+  if (!confirm((mode === 'move' ? 'DÉPLACER' : 'COPIER') + ' ' + n + ' point(s) vers "' + targetName + '" ?')) return;
+  try {
+    const ids = Array.from(pointsState.selected);
+    const fn = mode === 'move' ? 'admin_move_features' : 'admin_copy_features';
+    const result = await rpc(fn, { p_ids: ids, p_target_projet_id: targetId });
+    showStatus(result + ' point(s) ' + (mode === 'move' ? 'déplacé(s)' : 'copié(s)'), 'success');
+    pointsState.selected.clear();
+    await loadPointsPage();
+    refreshStatusBar();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
+
+async function onEditPoint(id) {
+  const r = pointsState.rows.find(x => x.id === id); if (!r) return;
+  const name = prompt('Nom :', r.name || ''); if (name === null) return;
+  const desc = prompt('Description :', r.description || ''); if (desc === null) return;
+  const cat = prompt('Catégorie :', r.category || ''); if (cat === null) return;
+  const col = prompt('Couleur (hex) :', r.color || ''); if (col === null) return;
+  try {
+    await rpc('admin_update_feature', { p_id: id, p_name: name || null, p_description: desc || null, p_category: cat || null, p_color: col || null });
+    showStatus('Point modifié', 'success');
+    await loadPointsPage();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 async function onBulkDeletePoints() {
   if (pointsState.selected.size === 0) return;
@@ -761,14 +813,17 @@ async function loadLexiqueTermes() {
     lexiqueState.rows = rows; lexiqueState.total = total;
     let h = '<table class="matrix"><thead><tr><th class="name-col">Terme</th><th>Normalisé</th><th>Catégorie</th><th>Statut</th><th>Actions</th></tr></thead><tbody>';
     rows.forEach(r => {
+      const isPropose = r.statut && r.statut !== 'valide';
+      const statutStyle = isPropose ? ' style="color:#c47e3e;font-weight:600"' : '';
       h += '<tr>'
         + '<td class="name-cell">' + escapeHtml(r.terme) + '</td>'
         + '<td style="font-size:11px">' + escapeHtml(r.terme_normalise) + '</td>'
         + '<td style="font-size:11px">' + escapeHtml(r.categorie || '—') + '</td>'
-        + '<td style="font-size:11px">' + escapeHtml(r.statut || '—') + '</td>'
+        + '<td style="font-size:11px"' + statutStyle + '>' + escapeHtml(r.statut || '—') + '</td>'
         + '<td class="actions">'
-        + '<button class="btn btn-mini btn-secondary" data-defs="' + r.id + '">Définitions</button> '
-        + '<button class="btn btn-mini btn-secondary" data-edit-lex="' + r.id + '">Éditer</button> '
+        + (isPropose ? '<button class="btn btn-mini" style="background:#28a745" data-approve-lex="' + r.id + '" title="Valider la proposition">✓</button> ' : '')
+        + '<button class="btn btn-mini btn-secondary" data-defs="' + r.id + '">Défs</button> '
+        + '<button class="btn btn-mini btn-secondary" data-edit-lex="' + r.id + '">✎</button> '
         + '<button class="btn btn-mini btn-danger" data-del-lex="' + r.id + '">×</button>'
         + '</td></tr>';
     });
@@ -781,6 +836,7 @@ async function loadLexiqueTermes() {
     area.innerHTML = h;
     area.querySelectorAll('button[data-edit-lex]').forEach(b => b.onclick = () => onEditLexique(b.dataset.editLex));
     area.querySelectorAll('button[data-del-lex]').forEach(b => b.onclick = () => onDeleteLexique(b.dataset.delLex));
+    area.querySelectorAll('button[data-approve-lex]').forEach(b => b.onclick = () => onApproveLexique(b.dataset.approveLex));
     area.querySelectorAll('button[data-defs]').forEach(b => b.onclick = () => { lexiqueState.definitionsLexiqueId = b.dataset.defs; lexiqueState.subtab = 'definitions'; renderLexique(); });
     const prev = document.getElementById('lexPrev'); if (prev) prev.onclick = () => { lexiqueState.page--; loadLexiqueTermes(); };
     const next = document.getElementById('lexNext'); if (next) next.onclick = () => { lexiqueState.page++; loadLexiqueTermes(); };
@@ -800,9 +856,25 @@ async function onEditLexique(id) {
   catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 async function onDeleteLexique(id) {
-  if (!confirm('Supprimer ce terme ? Définitions liées en cascade.')) return;
-  try { await rpc('admin_delete_lexique', { p_id: id }); showStatus('Supprimé', 'success'); loadLexiqueTermes(); refreshStatusBar(); }
-  catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+  if (!confirm('Supprimer ce terme ?')) return;
+  try {
+    let result = await rpc('admin_delete_lexique', { p_id: id, p_force: false });
+    if (typeof result === 'string' && result.startsWith('BLOCK:')) {
+      const msg = result.substring(6);
+      if (!confirm('ATTENTION : ' + msg + '\n\nForcer la suppression en cascade ?')) return;
+      result = await rpc('admin_delete_lexique', { p_id: id, p_force: true });
+    }
+    showStatus(typeof result === 'string' ? result.replace(/^OK:/, '') : 'Supprimé', 'success');
+    loadLexiqueTermes(); refreshStatusBar();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
+
+async function onApproveLexique(id) {
+  try {
+    await rpc('admin_update_lexique', { p_id: id, p_statut: 'valide' });
+    showStatus('Terme validé', 'success');
+    loadLexiqueTermes();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 
 async function renderLexiqueDefs() {
