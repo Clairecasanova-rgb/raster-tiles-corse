@@ -431,9 +431,9 @@ async function onCreateProjet() {
 }
 async function onRenameProjet(id) {
   const p = projets.find(x => x.id === id); if (!p) return;
-  const n = prompt('Nouveau nom :', p.nom);
-  if (!n || n.trim() === '' || n === p.nom) return;
-  try { await rpc('admin_rename_projet', { p_id: id, new_name: n.trim() }); showStatus('Renommé', 'success'); await reloadAll(); }
+  const n = prompt('Nom :', p.nom); if (n === null) return;
+  const d = prompt('Description :', p.description || ''); if (d === null) return;
+  try { await rpc('admin_update_projet', { p_id: id, p_nom: n.trim() || null, p_description: d.trim() || null }); showStatus('Modifié', 'success'); await reloadAll(); }
   catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 async function onDeleteProjet(id) {
@@ -480,9 +480,9 @@ function renderCartes() {
 }
 async function onRenameCarte(id) {
   const c = cartes.find(x => x.id === id); if (!c) return;
-  const n = prompt('Nouveau nom :', c.nom);
-  if (!n || n.trim() === '' || n === c.nom) return;
-  try { await rpc('admin_rename_carte', { c_id: id, new_name: n.trim() }); showStatus('Renommée', 'success'); await reloadAll(); }
+  const n = prompt('Nom :', c.nom); if (n === null) return;
+  const u = prompt('URL GitHub Pages :', c.url_github || ''); if (u === null) return;
+  try { await rpc('admin_update_carte', { p_id: id, p_nom: n.trim() || null, p_url_github: u.trim() || null }); showStatus('Modifiée', 'success'); await reloadAll(); }
   catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 async function onDeleteCarte(id) {
@@ -745,7 +745,10 @@ function renderCorrectionsTable() {
       if (c === 'created_at' && v) v = fmtDate(v);
       h += '<td style="font-size:11px;text-align:left;max-width:200px;word-break:break-word;">' + escapeHtml(v) + '</td>';
     });
-    h += '<td class="actions"><button class="btn btn-mini btn-danger" data-delete-corr="' + r.id + '">×</button></td></tr>';
+    h += '<td class="actions">'
+      + '<button class="btn btn-mini btn-secondary" data-edit-corr="' + r.id + '">✎</button> '
+      + '<button class="btn btn-mini btn-danger" data-delete-corr="' + r.id + '">×</button>'
+      + '</td></tr>';
   });
   h += '</tbody></table>';
   const totalPages = Math.max(1, Math.ceil(correctionsState.total / correctionsState.pageSize));
@@ -756,6 +759,7 @@ function renderCorrectionsTable() {
     + '</div>';
   area.innerHTML = h;
   area.querySelectorAll('button[data-delete-corr]').forEach(b => b.onclick = () => onDeleteCorrection(parseInt(b.dataset.deleteCorr)));
+  area.querySelectorAll('button[data-edit-corr]').forEach(b => b.onclick = () => onEditCorrection(parseInt(b.dataset.editCorr)));
   const prev = document.getElementById('cPrev'); if (prev) prev.onclick = () => { correctionsState.page--; loadCorrectionsPage(); };
   const next = document.getElementById('cNext'); if (next) next.onclick = () => { correctionsState.page++; loadCorrectionsPage(); };
 }
@@ -764,14 +768,29 @@ async function onDeleteCorrection(id) {
   try { await rpc('admin_delete_correction', { corr_id: id }); showStatus('Supprimée', 'success'); await loadCorrectionsPage(); refreshStatusBar(); }
   catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
+async function onEditCorrection(id) {
+  const r = correctionsState.rows.find(x => x.id === id); if (!r) return;
+  const nc = prompt('Nom corrigé :', r.nom_corrige || ''); if (nc === null) return;
+  const co = prompt('Commune :', r.commune || ''); if (co === null) return;
+  const no = prompt('Notes :', r.notes || ''); if (no === null) return;
+  const au = prompt('Auteur :', r.auteur || ''); if (au === null) return;
+  try {
+    await rpc('admin_update_correction', { p_id: id, p_nom_corrige: nc || null, p_commune: co || null, p_notes: no || null, p_auteur: au || null });
+    showStatus('Modifiée', 'success');
+    await loadCorrectionsPage();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
 
 // ===== TAB: Lexique =====
-let lexiqueState = { subtab: 'termes', search: '', categorie: '', page: 0, pageSize: 50, total: 0, rows: [], lexiqueCategories: [], definitionsLexiqueId: null, defsRows: [], assocsRows: [] };
+let lexiqueState = { subtab: 'termes', search: '', categorie: '', statut: '', page: 0, pageSize: 50, total: 0, rows: [], lexiqueCategories: [], lexiqueStatuts: [], definitionsLexiqueId: null, defsRows: [], assocsRows: [] };
 
 async function renderLexique() {
   const el = document.getElementById('tab-lexique');
   if (lexiqueState.lexiqueCategories.length === 0) {
     try { lexiqueState.lexiqueCategories = await rpc('admin_lexique_categories', {}); } catch(e){}
+  }
+  if (lexiqueState.lexiqueStatuts.length === 0) {
+    try { lexiqueState.lexiqueStatuts = await rpc('admin_lexique_statuts', {}); } catch(e){}
   }
   let h = '<div class="subtabs">'
     + '<button class="subtab' + (lexiqueState.subtab === 'termes' ? ' active' : '') + '" data-subtab="termes">Termes</button>'
@@ -789,15 +808,19 @@ function renderLexiqueTermes() {
   const c = document.getElementById('lexContent');
   let catOpts = '<option value="">Toutes catégories</option>';
   lexiqueState.lexiqueCategories.forEach(cat => { catOpts += '<option value="' + escapeHtml(cat.categorie) + '"' + (lexiqueState.categorie === cat.categorie ? ' selected' : '') + '>' + escapeHtml(cat.categorie) + ' (' + cat.nb + ')</option>'; });
+  let statOpts = '<option value="">Tous statuts</option>';
+  lexiqueState.lexiqueStatuts.forEach(s => { statOpts += '<option value="' + escapeHtml(s.statut) + '"' + (lexiqueState.statut === s.statut ? ' selected' : '') + '>' + escapeHtml(s.statut) + ' (' + s.nb + ')</option>'; });
   let h = '<div class="block"><h2>Termes du lexique</h2><div class="toolbar">'
     + '<input type="text" id="lexSearch" placeholder="Rechercher un terme…" value="' + escapeHtml(lexiqueState.search) + '" style="min-width:200px">'
     + '<select id="lexCateg">' + catOpts + '</select>'
+    + '<select id="lexStatut">' + statOpts + '</select>'
     + '<button class="btn btn-secondary btn-mini" id="lexRefresh">Chercher</button>'
     + '<button class="btn btn-mini" id="lexCreate">+ Nouveau terme</button>'
     + '</div><div id="lexTermesArea"><div class="loader">Chargement…</div></div></div>';
   c.innerHTML = h;
   document.getElementById('lexSearch').onkeydown = e => { if (e.key === 'Enter') { lexiqueState.search = e.target.value; lexiqueState.page = 0; loadLexiqueTermes(); } };
   document.getElementById('lexCateg').onchange = e => { lexiqueState.categorie = e.target.value; lexiqueState.page = 0; loadLexiqueTermes(); };
+  document.getElementById('lexStatut').onchange = e => { lexiqueState.statut = e.target.value; lexiqueState.page = 0; loadLexiqueTermes(); };
   document.getElementById('lexRefresh').onclick = () => { lexiqueState.search = document.getElementById('lexSearch').value; lexiqueState.page = 0; loadLexiqueTermes(); };
   document.getElementById('lexCreate').onclick = onCreateLexique;
   loadLexiqueTermes();
@@ -807,8 +830,8 @@ async function loadLexiqueTermes() {
   area.innerHTML = '<div class="loader">Chargement…</div>';
   try {
     const [rows, total] = await Promise.all([
-      rpc('admin_list_lexique', { p_search: lexiqueState.search || null, p_categorie: lexiqueState.categorie || null, p_limit: lexiqueState.pageSize, p_offset: lexiqueState.page * lexiqueState.pageSize }),
-      rpc('admin_count_lexique', { p_search: lexiqueState.search || null, p_categorie: lexiqueState.categorie || null })
+      rpc('admin_list_lexique', { p_search: lexiqueState.search || null, p_categorie: lexiqueState.categorie || null, p_statut: lexiqueState.statut || null, p_limit: lexiqueState.pageSize, p_offset: lexiqueState.page * lexiqueState.pageSize }),
+      rpc('admin_count_lexique', { p_search: lexiqueState.search || null, p_categorie: lexiqueState.categorie || null, p_statut: lexiqueState.statut || null })
     ]);
     lexiqueState.rows = rows; lexiqueState.total = total;
     let h = '<table class="matrix"><thead><tr><th class="name-col">Terme</th><th>Normalisé</th><th>Catégorie</th><th>Statut</th><th>Actions</th></tr></thead><tbody>';
@@ -852,7 +875,8 @@ async function onEditLexique(id) {
   const r = lexiqueState.rows.find(x => x.id === id); if (!r) return;
   const t = prompt('Terme :', r.terme); if (t === null) return;
   const cat = prompt('Catégorie :', r.categorie || ''); if (cat === null) return;
-  try { await rpc('admin_update_lexique', { p_id: id, p_terme: t.trim() || null, p_categorie: cat.trim() || null }); showStatus('Modifié', 'success'); loadLexiqueTermes(); }
+  const stat = prompt('Statut (valide / propose / rejete) :', r.statut || 'valide'); if (stat === null) return;
+  try { await rpc('admin_update_lexique', { p_id: id, p_terme: t.trim() || null, p_categorie: cat.trim() || null, p_statut: stat.trim() || null }); showStatus('Modifié', 'success'); loadLexiqueTermes(); }
   catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 async function onDeleteLexique(id) {
@@ -924,8 +948,14 @@ async function onEditDefinition(id) {
   const r = lexiqueState.defsRows.find(x => x.id === id); if (!r) return;
   const texte = prompt('Texte :', r.texte); if (texte === null) return;
   const src = prompt('Source :', r.source || ''); if (src === null) return;
-  try { await rpc('admin_update_definition', { p_id: id, p_texte: texte, p_source: src || null, p_source_abrege: null, p_ordre: null }); showStatus('Modifié', 'success'); renderLexiqueDefs(); }
-  catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+  const srcAbr = prompt('Source abrégée :', r.source_abrege || ''); if (srcAbr === null) return;
+  const ordre = prompt('Ordre :', r.ordre != null ? r.ordre : '0'); if (ordre === null) return;
+  const ordreN = parseInt(ordre);
+  try {
+    await rpc('admin_update_definition', { p_id: id, p_texte: texte, p_source: src || null, p_source_abrege: srcAbr || null, p_ordre: isNaN(ordreN) ? null : ordreN });
+    showStatus('Modifié', 'success');
+    renderLexiqueDefs();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 async function onDeleteDefinition(id) {
   if (!confirm('Supprimer cette définition ?')) return;
@@ -946,18 +976,39 @@ async function renderLexiqueAssocs() {
         + '<td>' + escapeHtml(r.commune || '—') + '</td>'
         + '<td>' + escapeHtml(r.terme_texte || r.terme_id) + '</td>'
         + '<td style="font-size:11px">' + escapeHtml(r.statut || '—') + '</td>'
-        + '<td class="actions"><button class="btn btn-mini btn-danger" data-del-assoc="' + r.id + '">×</button></td>'
-        + '</tr>';
+        + '<td class="actions">'
+        + '<button class="btn btn-mini btn-secondary" data-edit-assoc="' + r.id + '">✎</button> '
+        + '<button class="btn btn-mini btn-danger" data-del-assoc="' + r.id + '">×</button>'
+        + '</td></tr>';
     });
     h += '</tbody></table>';
     document.getElementById('assocArea').innerHTML = h;
     document.querySelectorAll('button[data-del-assoc]').forEach(b => b.onclick = () => onDeleteAssoc(b.dataset.delAssoc));
+    document.querySelectorAll('button[data-edit-assoc]').forEach(b => b.onclick = () => onEditAssoc(b.dataset.editAssoc));
   } catch (err) { document.getElementById('assocArea').innerHTML = '<div class="loader" style="color:#c00">' + escapeHtml(err.message) + '</div>'; }
 }
 async function onDeleteAssoc(id) {
   if (!confirm('Supprimer cette association ?')) return;
   try { await rpc('admin_delete_assoc_lex', { p_id: id }); showStatus('Supprimée', 'success'); renderLexiqueAssocs(); refreshStatusBar(); }
   catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
+async function onEditAssoc(id) {
+  const r = lexiqueState.assocsRows.find(x => x.id === id); if (!r) return;
+  const top = prompt('Toponyme :', r.toponyme || ''); if (top === null) return;
+  const co = prompt('Commune :', r.commune || ''); if (co === null) return;
+  const coc = prompt('Code commune (ex: 2B051) :', r.commune_code || ''); if (coc === null) return;
+  const st = prompt('Statut (valide / propose / rejete) :', r.statut || 'valide'); if (st === null) return;
+  const no = prompt('Notes :', r.notes || ''); if (no === null) return;
+  const mr = prompt('Microrégion :', r.microregion || ''); if (mr === null) return;
+  try {
+    await rpc('admin_update_assoc_lex', {
+      p_id: id, p_toponyme: top || null, p_commune: co || null,
+      p_commune_code: coc || null, p_statut: st || null,
+      p_notes: no || null, p_microregion: mr || null
+    });
+    showStatus('Modifiée', 'success');
+    renderLexiqueAssocs();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 
 // ===== TAB: Références (sources biblio + catégories + sélections) =====
@@ -1009,10 +1060,20 @@ async function onCreateSource() {
 async function onEditSource(id, rows) {
   const r = rows.find(x => x.id === id); if (!r) return;
   const code = prompt('Code :', r.code); if (code === null) return;
-  const ref = prompt('Référence :', r.reference_complete); if (ref === null) return;
-  const fiab = parseInt(prompt('Fiabilité (1-10) :', r.fiabilite));
-  try { await rpc('admin_update_source', { p_id: id, p_code: code, p_ref_complete: ref, p_fiabilite: isNaN(fiab) ? null : fiab }); showStatus('Modifié', 'success'); renderSources(); }
-  catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+  const ref = prompt('Référence complète :', r.reference_complete); if (ref === null) return;
+  const aut = prompt('Auteur :', r.auteur || ''); if (aut === null) return;
+  const ann = prompt('Année :', r.annee || ''); if (ann === null) return;
+  const desc = prompt('Description :', r.description || ''); if (desc === null) return;
+  const fiab = prompt('Fiabilité (1-10) :', r.fiabilite || '5'); if (fiab === null) return;
+  const annN = parseInt(ann); const fiabN = parseInt(fiab);
+  try {
+    await rpc('admin_update_source', {
+      p_id: id, p_code: code, p_ref_complete: ref,
+      p_auteur: aut || null, p_annee: isNaN(annN) ? null : annN,
+      p_description: desc || null, p_fiabilite: isNaN(fiabN) ? null : fiabN
+    });
+    showStatus('Modifié', 'success'); renderSources();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 async function onDeleteSource(id) {
   if (!confirm('Supprimer cette source ?')) return;
@@ -1044,11 +1105,20 @@ async function renderCategoriesUI() {
 async function onUpsertCategorie(id, rows) {
   const r = id && rows ? rows.find(x => x.id === id) : null;
   const nom = prompt('Nom :', r ? r.nom : ''); if (!nom) return;
-  const desc = prompt('Description :', r ? (r.description || '') : '') || null;
-  const couleur = prompt('Couleur (ex: #4caf50) :', r ? (r.couleur || '') : '') || null;
-  const ordre = parseInt(prompt('Ordre :', r ? r.ordre : 100));
-  try { await rpc('admin_upsert_categorie', { p_id: id || null, p_nom: nom, p_description: desc, p_couleur: couleur, p_ordre: isNaN(ordre) ? null : ordre, p_icone: null }); showStatus(id ? 'Modifiée' : 'Créée', 'success'); renderCategoriesUI(); refreshStatusBar(); }
-  catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+  const desc = prompt('Description :', r ? (r.description || '') : ''); if (desc === null) return;
+  const couleur = prompt('Couleur (ex: #4caf50) :', r ? (r.couleur || '') : ''); if (couleur === null) return;
+  const icone = prompt('Icône (nom ou emoji) :', r ? (r.icone || '') : ''); if (icone === null) return;
+  const ordreS = prompt('Ordre :', r ? r.ordre : 100); if (ordreS === null) return;
+  const ordre = parseInt(ordreS);
+  try {
+    await rpc('admin_upsert_categorie', {
+      p_id: id || null, p_nom: nom, p_description: desc || null,
+      p_couleur: couleur || null, p_icone: icone || null,
+      p_ordre: isNaN(ordre) ? null : ordre
+    });
+    showStatus(id ? 'Modifiée' : 'Créée', 'success');
+    renderCategoriesUI(); refreshStatusBar();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 async function onDeleteCategorie(id) {
   if (!confirm('Supprimer cette catégorie ?')) return;
@@ -1071,17 +1141,35 @@ async function renderSavedSelections() {
         + '<td>' + (Array.isArray(r.items) ? r.items.length : '?') + '</td>'
         + '<td style="font-size:11px">' + escapeHtml(r.auteur || '—') + '</td>'
         + '<td style="font-size:11px">' + fmtDate(r.created_at) + '</td>'
-        + '<td class="actions"><button class="btn btn-mini btn-danger" data-del-sel="' + r.id + '">×</button></td></tr>';
+        + '<td class="actions">'
+        + '<button class="btn btn-mini btn-secondary" data-edit-sel="' + r.id + '">✎</button> '
+        + '<button class="btn btn-mini btn-danger" data-del-sel="' + r.id + '">×</button>'
+        + '</td></tr>';
     });
     h += '</tbody></table>';
     document.getElementById('selArea').innerHTML = h;
     document.querySelectorAll('button[data-del-sel]').forEach(b => b.onclick = () => onDeleteSavedSelection(parseInt(b.dataset.delSel)));
+    document.querySelectorAll('button[data-edit-sel]').forEach(b => b.onclick = () => onEditSavedSelection(parseInt(b.dataset.editSel), rows));
   } catch (err) { document.getElementById('selArea').innerHTML = '<div class="loader" style="color:#c00">' + escapeHtml(err.message) + '</div>'; }
 }
 async function onDeleteSavedSelection(id) {
   if (!confirm('Supprimer cette sélection sauvée ?')) return;
   try { await rpc('admin_delete_saved_selection', { p_id: id }); showStatus('Supprimée', 'success'); renderSavedSelections(); refreshStatusBar(); }
   catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
+async function onEditSavedSelection(id, rows) {
+  const r = rows.find(x => x.id === id); if (!r) return;
+  const name = prompt('Nom :', r.name || ''); if (name === null) return;
+  const auteur = prompt('Auteur :', r.auteur || ''); if (auteur === null) return;
+  const projetTarget = pickProjet('Déplacer vers quel projet ? (Annuler pour garder)');
+  try {
+    await rpc('admin_update_saved_selection', {
+      p_id: id, p_name: name.trim() || null, p_auteur: auteur.trim() || null,
+      p_projet_id: projetTarget
+    });
+    showStatus('Modifiée', 'success');
+    renderSavedSelections();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 
 // ===== TAB: Sécurité =====
