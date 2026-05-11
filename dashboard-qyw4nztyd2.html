@@ -2,78 +2,79 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Admin — Gestion des projets liés aux cartes</title>
+<title>Admin — Gestion Toponymie</title>
 <meta name="robots" content="noindex,nofollow">
 <style>
   body { margin: 0; padding: 24px; font-family: 'Segoe UI', sans-serif; background: #f4f1ec; color: #333; }
   h1 { color: #8b4513; margin: 0 0 6px; font-size: 22px; }
-  .subtitle { color: #8b7355; font-size: 13px; margin-bottom: 24px; }
+  .subtitle { color: #8b7355; font-size: 13px; margin-bottom: 16px; }
   .block { background: white; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
   .block h2 { color: #5a3a1a; font-size: 14px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.5px; }
 
-  /* Login modal */
-  #loginScreen {
-    position: fixed; inset: 0; background: linear-gradient(135deg, #8b4513, #c47e3e);
-    display: flex; align-items: center; justify-content: center; z-index: 9999;
-  }
-  #loginBox {
-    background: white; padding: 30px; border-radius: 12px; min-width: 320px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-  }
+  /* Login */
+  #loginScreen { position: fixed; inset: 0; background: linear-gradient(135deg, #8b4513, #c47e3e); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+  #loginBox { background: white; padding: 30px; border-radius: 12px; min-width: 320px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
   #loginBox h2 { margin: 0 0 16px; color: #5a3a1a; font-size: 18px; }
-  #loginBox input[type=password] {
-    width: 100%; padding: 10px 12px; border: 1px solid #d0c0b0; border-radius: 6px;
-    font-size: 14px; box-sizing: border-box;
-  }
-  #loginBox button {
-    width: 100%; padding: 10px; margin-top: 12px; background: #8b4513; color: white;
-    border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px;
-  }
+  #loginBox input[type=password] { width: 100%; padding: 10px 12px; border: 1px solid #d0c0b0; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+  #loginBox button { width: 100%; padding: 10px; margin-top: 12px; background: #8b4513; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px; }
   #loginBox button:hover { background: #6d360f; }
   #loginErr { color: #c00; font-size: 12px; margin-top: 8px; min-height: 14px; }
 
-  table.matrix {
-    border-collapse: collapse; width: 100%;
-    background: white; font-size: 12px;
-  }
-  table.matrix th, table.matrix td {
-    border: 1px solid #e5ddd0; padding: 6px 8px; text-align: center;
-  }
+  /* Status bar */
+  #statusBar { background: white; border-radius: 8px; padding: 10px 16px; margin-bottom: 16px; display: flex; gap: 24px; align-items: center; font-size: 12px; color: #5a3a1a; box-shadow: 0 2px 6px rgba(0,0,0,0.08); flex-wrap: wrap; }
+  #statusBar .pill { padding: 3px 10px; border-radius: 12px; background: #faf7f2; }
+  #statusBar .pill.ok { background: #d4edda; color: #155724; }
+  #statusBar .pill.warn { background: #fff3cd; color: #856404; }
+  #statusBar .pill.bad { background: #f8d7da; color: #721c24; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 2px solid #e5ddd0; }
+  .tab { padding: 8px 16px; background: none; border: none; cursor: pointer; font-size: 13px; color: #8b7355; font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+  .tab:hover { color: #5a3a1a; }
+  .tab.active { color: #8b4513; border-bottom-color: #8b4513; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Tables */
+  table.matrix { border-collapse: collapse; width: 100%; background: white; font-size: 12px; }
+  table.matrix th, table.matrix td { border: 1px solid #e5ddd0; padding: 6px 8px; text-align: center; }
   table.matrix th { background: #faf7f2; color: #5a3a1a; font-weight: 600; }
-  table.matrix th.projet-name { text-align: left; min-width: 200px; }
-  table.matrix th.carte-col {
-    transform: rotate(-25deg); transform-origin: bottom left;
-    height: 120px; white-space: nowrap; min-width: 30px; padding: 4px;
-    font-size: 11px; font-weight: 500;
-  }
-  table.matrix td.projet-name { text-align: left; font-weight: 500; color: #333; }
+  table.matrix th.name-col { text-align: left; min-width: 200px; }
+  table.matrix th.carte-col { transform: rotate(-25deg); transform-origin: bottom left; height: 120px; white-space: nowrap; min-width: 30px; padding: 4px; font-size: 11px; font-weight: 500; }
+  table.matrix td.name-cell { text-align: left; font-weight: 500; color: #333; }
+  table.matrix td.actions { white-space: nowrap; }
   table.matrix td input[type="checkbox"] { accent-color: #8b4513; transform: scale(1.2); cursor: pointer; }
   table.matrix tr:hover td { background: #faf7f2; }
   .stats { font-size: 11px; color: #888; margin-top: 8px; }
-  .btn {
-    background: #8b4513; color: white; border: none; padding: 8px 14px;
-    border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;
-  }
+
+  /* Buttons */
+  .btn { background: #8b4513; color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; }
   .btn:hover { background: #6d360f; }
   .btn-secondary { background: #f0ebe3; color: #5a3a1a; }
   .btn-secondary:hover { background: #e5ddd0; }
+  .btn-danger { background: #c0392b; }
+  .btn-danger:hover { background: #962d20; }
+  .btn-mini { padding: 3px 8px; font-size: 11px; }
   .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-  input[type="text"], textarea {
-    border: 1px solid #e5ddd0; border-radius: 4px; padding: 5px 8px; font-size: 12px;
-  }
-  textarea { resize: vertical; min-height: 60px; font-family: inherit; }
   .form-grid { display: grid; grid-template-columns: 130px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
   .form-grid label { font-size: 12px; color: #5a3a1a; font-weight: 500; }
+  input[type="text"], textarea, select { border: 1px solid #e5ddd0; border-radius: 4px; padding: 5px 8px; font-size: 12px; font-family: inherit; }
+  textarea { resize: vertical; min-height: 60px; }
+
+  /* Status toast */
   #status { padding: 8px 12px; border-radius: 4px; margin-top: 10px; font-size: 12px; display: none; position: fixed; bottom: 16px; right: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; }
   #status.success { background: #d4edda; color: #155724; display: block; }
   #status.error { background: #f8d7da; color: #721c24; display: block; }
   .loader { color: #8b7355; font-style: italic; padding: 12px; text-align: center; }
   #logoutBtn { float: right; background: none; border: 1px solid #c0a080; color: #8b4513; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+  .pagination { display: flex; gap: 4px; justify-content: center; margin-top: 10px; align-items: center; font-size: 12px; }
+  .pagination button { padding: 4px 10px; border: 1px solid #d0c0b0; background: white; border-radius: 4px; cursor: pointer; }
+  .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
 </head>
 <body>
 
-<!-- Modal de login (cachee une fois authentifie) -->
+<!-- Login -->
 <div id="loginScreen">
   <div id="loginBox">
     <h2>🔒 Accès admin</h2>
@@ -84,14 +85,33 @@
 </div>
 
 <div id="mainApp" style="display:none">
-  <h1>Admin — Gestion projets ↔ cartes
+  <h1>Admin — Toponymie Corse
     <button id="logoutBtn">Déconnexion</button>
   </h1>
-  <div class="subtitle">Tableau croisé pour associer/désassocier les projets à chaque carte. Changements appliqués instantanément.</div>
+  <div class="subtitle">Gestion projets, cartes, modération des points et corrections.</div>
 
-  <div id="content">
-    <div class="loader">Chargement…</div>
+  <div id="statusBar">
+    <span class="pill" id="stat-projets">— projets</span>
+    <span class="pill" id="stat-cartes">— cartes</span>
+    <span class="pill" id="stat-assoc">— associations</span>
+    <span class="pill" id="stat-features">— points</span>
+    <span class="pill" id="stat-corrections">— corrections</span>
+    <span class="pill" id="stat-lockout">— lockout</span>
   </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="matrice">Matrice projets × cartes</button>
+    <button class="tab" data-tab="projets">Projets</button>
+    <button class="tab" data-tab="cartes">Cartes</button>
+    <button class="tab" data-tab="points">Modération points</button>
+    <button class="tab" data-tab="corrections">Modération corrections</button>
+  </div>
+
+  <div id="tab-matrice" class="tab-content active"></div>
+  <div id="tab-projets" class="tab-content"></div>
+  <div id="tab-cartes" class="tab-content"></div>
+  <div id="tab-points" class="tab-content"></div>
+  <div id="tab-corrections" class="tab-content"></div>
 </div>
 
 <div id="status"></div>
@@ -108,60 +128,51 @@ const HEADERS = {
 };
 
 const SESSION_KEY = 'admin_auth_session';
-const PWD_KEY = 'admin_auth_pwd';  // stocke en sessionStorage (efface a la fermeture du navigateur)
+const PWD_KEY = 'admin_auth_pwd';
 
-// ----- RPC helper : appelle une fonction admin avec mot de passe en session -----
 async function rpc(fnName, params) {
   const pwd = sessionStorage.getItem(PWD_KEY);
   if (!pwd) throw new Error('Session expiree, reconnecte-toi');
   const body = Object.assign({ password: pwd }, params || {});
   const r = await fetch(SUPABASE_URL + '/rest/v1/rpc/' + fnName, {
-    method: 'POST', headers: HEADERS,
-    body: JSON.stringify(body)
+    method: 'POST', headers: HEADERS, body: JSON.stringify(body)
   });
-  if (!r.ok) {
-    const t = await r.text();
-    throw new Error(fnName + ' echec: ' + t);
-  }
+  if (!r.ok) { const t = await r.text(); throw new Error(fnName + ' echec: ' + t); }
   return await r.json();
-}
-
-function showStatus(msg, type) {
-  var s = document.getElementById('status');
-  s.textContent = msg;
-  s.className = type;
-  setTimeout(() => { s.className = ''; }, 4000);
 }
 
 async function api(method, path, body) {
   const r = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
     method: method, headers: HEADERS, body: body ? JSON.stringify(body) : undefined
   });
-  if (!r.ok) {
-    const t = await r.text();
-    throw new Error(method + ' ' + path + ' → ' + r.status + ' : ' + t);
-  }
+  if (!r.ok) { const t = await r.text(); throw new Error(method + ' ' + path + ' → ' + r.status + ' : ' + t); }
   if (r.status === 204) return null;
   return await r.json();
 }
 
-// ----- Verify password via Supabase RPC (cote serveur) -----
+function showStatus(msg, type) {
+  const s = document.getElementById('status');
+  s.textContent = msg; s.className = type;
+  setTimeout(() => { s.className = ''; }, 4000);
+}
+
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  const d = document.createElement('div'); d.textContent = String(s);
+  return d.innerHTML;
+}
+
+// ----- Auth -----
 async function verifyPassword(pwd) {
   try {
     const r = await fetch(SUPABASE_URL + '/rest/v1/rpc/verify_admin_password', {
-      method: 'POST', headers: HEADERS,
-      body: JSON.stringify({ input_password: pwd })
+      method: 'POST', headers: HEADERS, body: JSON.stringify({ input_password: pwd })
     });
     if (!r.ok) return false;
-    const result = await r.json();
-    return result === true;
-  } catch (err) {
-    console.error('Erreur verification mot de passe:', err);
-    return false;
-  }
+    return (await r.json()) === true;
+  } catch (e) { return false; }
 }
 
-// ----- Auth flow -----
 async function login() {
   const pwd = document.getElementById('loginPwd').value;
   const err = document.getElementById('loginErr');
@@ -171,12 +182,7 @@ async function login() {
   btn.disabled = true; btn.textContent = 'Vérification…';
   const ok = await verifyPassword(pwd);
   btn.disabled = false; btn.textContent = 'Se connecter';
-  if (!ok) {
-    err.textContent = 'Mot de passe incorrect';
-    return;
-  }
-  // Stocker un flag session + le mot de passe (sessionStorage = efface a la fermeture du navigateur)
-  // Note: nécessaire pour appeler les RPC admin qui exigent le password en parametre
+  if (!ok) { err.textContent = 'Mot de passe incorrect (ou lockout actif si 5+ échecs)'; return; }
   sessionStorage.setItem(SESSION_KEY, btoa(Date.now() + ':' + Math.random()));
   sessionStorage.setItem(PWD_KEY, pwd);
   showApp();
@@ -192,107 +198,118 @@ function logout() {
 function showApp() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainApp').style.display = 'block';
-  loadAll().then(render).catch(err => {
-    document.getElementById('content').innerHTML = '<div class="block" style="color:#c00">Erreur Supabase : ' + err.message + '</div>';
-  });
+  reloadAll();
 }
 
 // ----- State -----
-let cartes = [];
-let projets = [];
-let associations = new Set();
+let cartes = [], projets = [], associations = new Set();
+let pointsState = { projetFilter: 'all', page: 0, pageSize: 25, total: 0, rows: [] };
+let correctionsState = { page: 0, pageSize: 50, total: 0, rows: [] };
 
-async function loadAll() {
-  cartes = await api('GET', 'cartes?select=*&order=created_at.desc');
-  projets = await api('GET', 'projets?select=id,nom,description&order=id.desc');
-  const mp = await api('GET', 'map_projets?select=carte_id,projet_id');
-  associations = new Set(mp.map(x => x.carte_id + '-' + x.projet_id));
+async function reloadAll() {
+  try {
+    cartes = await api('GET', 'cartes?select=*&order=created_at.desc');
+    projets = await api('GET', 'projets?select=*&order=id.desc');
+    const mp = await api('GET', 'map_projets?select=carte_id,projet_id');
+    associations = new Set(mp.map(x => x.carte_id + '-' + x.projet_id));
+    // Source 2 : tags [map:HASH] dans les descriptions de projets (compat anciennes cartes)
+    const hashToCarteId = {};
+    cartes.forEach(c => { hashToCarteId[c.hash] = c.id; });
+    const tagRe = /\[map:([a-z0-9]+)\]/g;
+    projets.forEach(p => {
+      if (!p.description) return;
+      let m;
+      while ((m = tagRe.exec(p.description)) !== null) {
+        const carteId = hashToCarteId[m[1]];
+        if (carteId) associations.add(carteId + '-' + p.id);
+      }
+    });
+    await refreshStatusBar();
+    renderActiveTab();
+  } catch (err) {
+    showStatus('Erreur chargement : ' + err.message, 'error');
+  }
 }
 
-function render() {
-  const content = document.getElementById('content');
+async function refreshStatusBar() {
+  document.getElementById('stat-projets').textContent = projets.length + ' projets';
+  document.getElementById('stat-cartes').textContent = cartes.length + ' cartes';
+  document.getElementById('stat-assoc').textContent = associations.size + ' assoc.';
+  try {
+    const cf = await rpc('admin_count_custom_features', { p_projet_id: null });
+    document.getElementById('stat-features').textContent = cf + ' points';
+  } catch (e) { document.getElementById('stat-features').textContent = '? points'; }
+  try {
+    const cc = await rpc('admin_count_corrections', {});
+    document.getElementById('stat-corrections').textContent = cc + ' corrections';
+  } catch (e) { document.getElementById('stat-corrections').textContent = '? corrections'; }
+  try {
+    const lk = await rpc('admin_lockout_status_protected', {});
+    const row = Array.isArray(lk) ? lk[0] : lk;
+    const pill = document.getElementById('stat-lockout');
+    if (row.is_locked) {
+      pill.textContent = '🚨 Lockout actif (' + row.minutes_until_unlock + ' min)';
+      pill.className = 'pill bad';
+    } else if (row.current_fails > 0) {
+      pill.textContent = '⚠ ' + row.current_fails + '/5 échecs récents';
+      pill.className = 'pill warn';
+    } else {
+      pill.textContent = '✓ Lockout OK';
+      pill.className = 'pill ok';
+    }
+  } catch (e) { document.getElementById('stat-lockout').textContent = '? lockout'; }
+}
+
+// ----- Tab switching -----
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('tab-' + t.dataset.tab).classList.add('active');
+    renderActiveTab();
+  });
+});
+
+function activeTabId() {
+  const t = document.querySelector('.tab.active');
+  return t ? t.dataset.tab : 'matrice';
+}
+
+function renderActiveTab() {
+  const tab = activeTabId();
+  if (tab === 'matrice') renderMatrice();
+  else if (tab === 'projets') renderProjets();
+  else if (tab === 'cartes') renderCartes();
+  else if (tab === 'points') renderPoints();
+  else if (tab === 'corrections') renderCorrections();
+}
+
+// ===== TAB: Matrice =====
+function renderMatrice() {
+  const el = document.getElementById('tab-matrice');
   if (cartes.length === 0) {
-    content.innerHTML = '<div class="block"><p>Aucune carte enregistrée. Génère une carte depuis Tkinter pour l\'enregistrer dans <code>cartes</code>.</p></div>';
-    renderCreateProjet();
+    el.innerHTML = '<div class="block"><p>Aucune carte enregistrée. Génère une carte depuis Tkinter pour l\'enregistrer dans <code>cartes</code>.</p></div>';
     return;
   }
-  let html = '<div class="block"><h2>Matrice projets × cartes</h2>';
-  html += '<div class="stats">' + projets.length + ' projet(s) · ' + cartes.length + ' carte(s) · ' + associations.size + ' association(s) actives</div>';
-  html += '<div style="overflow-x:auto;margin-top:12px;"><table class="matrix">';
-  html += '<thead><tr><th class="projet-name">Projet \\ Carte →</th>';
-  cartes.forEach(c => {
-    html += '<th class="carte-col" title="' + escapeHtml(c.hash) + '">' + escapeHtml(c.nom) + '</th>';
-  });
-  html += '</tr></thead><tbody>';
+  let h = '<div class="block"><h2>Associations projets × cartes</h2>';
+  h += '<div class="stats">' + projets.length + ' projets · ' + cartes.length + ' cartes · ' + associations.size + ' associations actives</div>';
+  h += '<div style="overflow-x:auto;margin-top:12px;"><table class="matrix">';
+  h += '<thead><tr><th class="name-col">Projet \\ Carte →</th>';
+  cartes.forEach(c => { h += '<th class="carte-col" title="' + escapeHtml(c.hash) + '">' + escapeHtml(c.nom) + '</th>'; });
+  h += '</tr></thead><tbody>';
   projets.forEach(p => {
-    html += '<tr><td class="projet-name" title="ID ' + p.id + '">' + escapeHtml(p.nom) + '</td>';
+    h += '<tr><td class="name-cell" title="ID ' + p.id + '">' + escapeHtml(p.nom) + '</td>';
     cartes.forEach(c => {
       const key = c.id + '-' + p.id;
       const checked = associations.has(key);
-      html += '<td><input type="checkbox" data-carte="' + c.id + '" data-projet="' + p.id + '"' + (checked ? ' checked' : '') + '></td>';
+      h += '<td><input type="checkbox" data-carte="' + c.id + '" data-projet="' + p.id + '"' + (checked ? ' checked' : '') + '></td>';
     });
-    html += '</tr>';
+    h += '</tr>';
   });
-  html += '</tbody></table></div>';
-  html += '</div>';
-  content.innerHTML = html;
-  content.querySelectorAll('table.matrix input[type="checkbox"]').forEach(cb => {
-    cb.addEventListener('change', onAssociationToggle);
-  });
-  renderCreateProjet();
-  renderCartesList();
-}
-
-function renderCreateProjet() {
-  const content = document.getElementById('content');
-  const block = document.createElement('div');
-  block.className = 'block';
-  block.innerHTML = `
-    <h2>Créer un nouveau projet</h2>
-    <div class="form-grid">
-      <label>Nom :</label>
-      <input type="text" id="newProjNom" placeholder="ex: Nouveau projet 2026">
-      <label>Description :</label>
-      <textarea id="newProjDesc" placeholder="Description optionnelle…"></textarea>
-    </div>
-    <button class="btn" id="btnCreateProjet">Créer le projet</button>
-  `;
-  content.appendChild(block);
-  document.getElementById('btnCreateProjet').onclick = onCreateProjet;
-}
-
-function renderCartesList() {
-  const content = document.getElementById('content');
-  const block = document.createElement('div');
-  block.className = 'block';
-  let html = '<h2>Cartes enregistrées</h2>';
-  if (cartes.length === 0) {
-    html += '<div class="loader">Aucune carte enregistrée pour l\'instant.</div>';
-  } else {
-    html += '<table class="matrix" style="width:auto"><thead><tr>' +
-      '<th class="projet-name">Nom</th><th>Hash</th><th>Créée le</th><th>Action</th>' +
-      '</tr></thead><tbody>';
-    cartes.forEach(c => {
-      html += '<tr>' +
-        '<td class="projet-name">' + escapeHtml(c.nom) + '</td>' +
-        '<td style="font-family:monospace;font-size:10px">' + escapeHtml(c.hash) + '</td>' +
-        '<td>' + new Date(c.created_at).toLocaleDateString('fr-FR') + '</td>' +
-        '<td><button class="btn btn-secondary" data-delete="' + c.id + '">Supprimer</button></td>' +
-        '</tr>';
-    });
-    html += '</tbody></table>';
-  }
-  block.innerHTML = html;
-  content.appendChild(block);
-  content.querySelectorAll('button[data-delete]').forEach(b => {
-    b.onclick = (e) => onDeleteCarte(parseInt(b.dataset.delete));
-  });
-}
-
-function escapeHtml(s) {
-  if (!s) return '';
-  const d = document.createElement('div'); d.textContent = s;
-  return d.innerHTML;
+  h += '</tbody></table></div></div>';
+  el.innerHTML = h;
+  el.querySelectorAll('table.matrix input[type="checkbox"]').forEach(cb => cb.addEventListener('change', onAssociationToggle));
 }
 
 async function onAssociationToggle(e) {
@@ -310,12 +327,49 @@ async function onAssociationToggle(e) {
       associations.delete(carteId + '-' + projetId);
       showStatus('Association retirée', 'success');
     }
+    refreshStatusBar();
   } catch (err) {
     showStatus('Erreur : ' + err.message, 'error');
     cb.checked = !cb.checked;
   } finally {
     cb.disabled = false;
   }
+}
+
+// ===== TAB: Projets =====
+function renderProjets() {
+  const el = document.getElementById('tab-projets');
+  let h = '<div class="block"><h2>Créer un nouveau projet</h2>';
+  h += '<div class="form-grid">';
+  h += '<label>Nom :</label><input type="text" id="newProjNom" placeholder="ex: Nouveau projet 2026">';
+  h += '<label>Description :</label><textarea id="newProjDesc" placeholder="Description optionnelle…"></textarea>';
+  h += '</div>';
+  h += '<button class="btn" id="btnCreateProjet">Créer le projet</button>';
+  h += '</div>';
+
+  h += '<div class="block"><h2>Liste des projets (' + projets.length + ')</h2>';
+  if (projets.length === 0) {
+    h += '<div class="loader">Aucun projet pour l\'instant.</div>';
+  } else {
+    h += '<table class="matrix"><thead><tr><th>ID</th><th class="name-col">Nom</th><th>Description</th><th>Actions</th></tr></thead><tbody>';
+    projets.forEach(p => {
+      h += '<tr>'
+        + '<td>' + p.id + '</td>'
+        + '<td class="name-cell">' + escapeHtml(p.nom) + '</td>'
+        + '<td style="text-align:left;font-size:11px;color:#777">' + escapeHtml(p.description || '—') + '</td>'
+        + '<td class="actions">'
+        + '<button class="btn btn-mini btn-secondary" data-rename-projet="' + p.id + '">Renommer</button> '
+        + '<button class="btn btn-mini btn-danger" data-delete-projet="' + p.id + '">Supprimer</button>'
+        + '</td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+  h += '</div>';
+  el.innerHTML = h;
+
+  document.getElementById('btnCreateProjet').onclick = onCreateProjet;
+  el.querySelectorAll('button[data-rename-projet]').forEach(b => b.onclick = () => onRenameProjet(parseInt(b.dataset.renameProjet)));
+  el.querySelectorAll('button[data-delete-projet]').forEach(b => b.onclick = () => onDeleteProjet(parseInt(b.dataset.deleteProjet)));
 }
 
 async function onCreateProjet() {
@@ -325,25 +379,246 @@ async function onCreateProjet() {
   try {
     const newProj = await api('POST', 'projets', { nom: nom, description: desc || null });
     showStatus('Projet "' + nom + '" créé (ID ' + newProj[0].id + ')', 'success');
-    document.getElementById('newProjNom').value = '';
-    document.getElementById('newProjDesc').value = '';
-    await loadAll();
-    render();
-  } catch (err) {
-    showStatus('Erreur création : ' + err.message, 'error');
+    await reloadAll();
+  } catch (err) { showStatus('Erreur création : ' + err.message, 'error'); }
+}
+
+async function onRenameProjet(id) {
+  const p = projets.find(x => x.id === id);
+  if (!p) return;
+  const newName = prompt('Renommer le projet "' + p.nom + '" en :', p.nom);
+  if (!newName || newName.trim() === '' || newName === p.nom) return;
+  try {
+    await rpc('admin_rename_projet', { p_id: id, new_name: newName.trim() });
+    showStatus('Projet renommé', 'success');
+    await reloadAll();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
+
+async function onDeleteProjet(id) {
+  const p = projets.find(x => x.id === id);
+  if (!p) return;
+  if (!confirm('Supprimer DÉFINITIVEMENT le projet "' + p.nom + '" ?\n\nCela supprime aussi tous ses points et corrections en cascade.\nIRRÉVERSIBLE.')) return;
+  try {
+    await rpc('admin_delete_projet', { p_id: id });
+    showStatus('Projet supprimé', 'success');
+    await reloadAll();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
+
+// ===== TAB: Cartes =====
+function renderCartes() {
+  const el = document.getElementById('tab-cartes');
+  let h = '<div class="block"><h2>Cartes enregistrées (' + cartes.length + ')</h2>';
+  if (cartes.length === 0) {
+    h += '<div class="loader">Aucune carte. Génère depuis Tkinter pour qu\'elles apparaissent ici.</div>';
+  } else {
+    h += '<table class="matrix"><thead><tr><th>ID</th><th class="name-col">Nom</th><th>Hash</th><th>Créée le</th><th>Actions</th></tr></thead><tbody>';
+    cartes.forEach(c => {
+      h += '<tr>'
+        + '<td>' + c.id + '</td>'
+        + '<td class="name-cell">' + escapeHtml(c.nom) + '</td>'
+        + '<td style="font-family:monospace;font-size:10px">' + escapeHtml(c.hash) + '</td>'
+        + '<td>' + (c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR') : '—') + '</td>'
+        + '<td class="actions">'
+        + '<button class="btn btn-mini btn-secondary" data-rename-carte="' + c.id + '">Renommer</button> '
+        + '<button class="btn btn-mini btn-danger" data-delete-carte="' + c.id + '">Supprimer</button>'
+        + '</td></tr>';
+    });
+    h += '</tbody></table>';
   }
+  h += '</div>';
+  el.innerHTML = h;
+  el.querySelectorAll('button[data-rename-carte]').forEach(b => b.onclick = () => onRenameCarte(parseInt(b.dataset.renameCarte)));
+  el.querySelectorAll('button[data-delete-carte]').forEach(b => b.onclick = () => onDeleteCarte(parseInt(b.dataset.deleteCarte)));
+}
+
+async function onRenameCarte(id) {
+  const c = cartes.find(x => x.id === id);
+  if (!c) return;
+  const newName = prompt('Renommer la carte "' + c.nom + '" en :', c.nom);
+  if (!newName || newName.trim() === '' || newName === c.nom) return;
+  try {
+    await rpc('admin_rename_carte', { c_id: id, new_name: newName.trim() });
+    showStatus('Carte renommée', 'success');
+    await reloadAll();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 
 async function onDeleteCarte(id) {
-  if (!confirm('Supprimer cette carte de la liste ?\n\nCela ne supprime PAS le fichier HTML, juste son enregistrement (et toutes ses associations).')) return;
+  const c = cartes.find(x => x.id === id);
+  if (!c) return;
+  if (!confirm('Supprimer l\'enregistrement de la carte "' + c.nom + '" ?\n\nLe fichier HTML reste en ligne, seule l\'entrée Supabase + ses associations sont retirées.')) return;
   try {
     await rpc('admin_delete_carte', { c_id: id });
     showStatus('Carte supprimée', 'success');
-    await loadAll();
-    render();
+    await reloadAll();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
+
+// ===== TAB: Modération points =====
+async function renderPoints() {
+  const el = document.getElementById('tab-points');
+  let projetOptions = '<option value="all">Tous les projets</option>';
+  projets.forEach(p => { projetOptions += '<option value="' + p.id + '"' + (pointsState.projetFilter == p.id ? ' selected' : '') + '>' + escapeHtml(p.nom) + ' (ID ' + p.id + ')</option>'; });
+
+  let h = '<div class="block"><h2>Modération des points (custom_features)</h2>';
+  h += '<div class="toolbar"><label style="font-size:12px;color:#5a3a1a">Filtrer par projet :</label>';
+  h += '<select id="pointsFilter">' + projetOptions + '</select>';
+  h += '<button class="btn btn-secondary btn-mini" id="pointsRefresh">Actualiser</button></div>';
+  h += '<div id="pointsTableArea"><div class="loader">Chargement…</div></div>';
+  h += '</div>';
+  el.innerHTML = h;
+
+  document.getElementById('pointsFilter').onchange = (e) => {
+    pointsState.projetFilter = e.target.value;
+    pointsState.page = 0;
+    loadPointsPage();
+  };
+  document.getElementById('pointsRefresh').onclick = () => loadPointsPage();
+  await loadPointsPage();
+}
+
+async function loadPointsPage() {
+  const area = document.getElementById('pointsTableArea');
+  if (!area) return;
+  area.innerHTML = '<div class="loader">Chargement…</div>';
+  const projetId = pointsState.projetFilter === 'all' ? null : parseInt(pointsState.projetFilter);
+  try {
+    const [rows, total] = await Promise.all([
+      rpc('admin_list_custom_features', { p_projet_id: projetId, p_limit: pointsState.pageSize, p_offset: pointsState.page * pointsState.pageSize }),
+      rpc('admin_count_custom_features', { p_projet_id: projetId })
+    ]);
+    pointsState.rows = rows; pointsState.total = total;
+    renderPointsTable();
   } catch (err) {
-    showStatus('Erreur : ' + err.message, 'error');
+    area.innerHTML = '<div class="loader" style="color:#c00">Erreur : ' + escapeHtml(err.message) + '</div>';
   }
+}
+
+function renderPointsTable() {
+  const area = document.getElementById('pointsTableArea');
+  if (pointsState.rows.length === 0) {
+    area.innerHTML = '<div class="loader">Aucun point.</div>';
+    return;
+  }
+  let h = '<table class="matrix"><thead><tr>'
+    + '<th>ID</th><th class="name-col">Nom / texte</th><th>Lat/Lon</th><th>Projet</th><th>Créé</th><th>Photo</th><th>Action</th>'
+    + '</tr></thead><tbody>';
+  pointsState.rows.forEach(p => {
+    const txt = p.name || p.text || p.title || p.label || '—';
+    const lat = (p.lat !== undefined ? p.lat : (p.latitude !== undefined ? p.latitude : '?'));
+    const lon = (p.lon !== undefined ? p.lon : (p.longitude !== undefined ? p.longitude : '?'));
+    const photo = p.photo_url ? '<a href="' + escapeHtml(p.photo_url) + '" target="_blank">📷</a>' : '—';
+    const projetName = (projets.find(x => x.id === p.projet_id) || {}).nom || ('#' + p.projet_id);
+    h += '<tr>'
+      + '<td>' + p.id + '</td>'
+      + '<td class="name-cell" style="max-width:300px;word-break:break-word;">' + escapeHtml(txt) + '</td>'
+      + '<td style="font-family:monospace;font-size:10px">' + escapeHtml(lat) + '<br>' + escapeHtml(lon) + '</td>'
+      + '<td style="font-size:11px">' + escapeHtml(projetName) + '</td>'
+      + '<td>' + (p.created_at ? new Date(p.created_at).toLocaleDateString('fr-FR') : '—') + '</td>'
+      + '<td>' + photo + '</td>'
+      + '<td class="actions"><button class="btn btn-mini btn-danger" data-delete-point="' + p.id + '">Supprimer</button></td>'
+      + '</tr>';
+  });
+  h += '</tbody></table>';
+
+  const totalPages = Math.max(1, Math.ceil(pointsState.total / pointsState.pageSize));
+  h += '<div class="pagination">'
+    + '<button id="pPrev"' + (pointsState.page === 0 ? ' disabled' : '') + '>‹ Précédent</button>'
+    + '<span>Page ' + (pointsState.page + 1) + ' / ' + totalPages + ' (' + pointsState.total + ' au total)</span>'
+    + '<button id="pNext"' + (pointsState.page + 1 >= totalPages ? ' disabled' : '') + '>Suivant ›</button>'
+    + '</div>';
+  area.innerHTML = h;
+
+  area.querySelectorAll('button[data-delete-point]').forEach(b => b.onclick = () => onDeletePoint(parseInt(b.dataset.deletePoint)));
+  const prev = document.getElementById('pPrev'); if (prev) prev.onclick = () => { pointsState.page--; loadPointsPage(); };
+  const next = document.getElementById('pNext'); if (next) next.onclick = () => { pointsState.page++; loadPointsPage(); };
+}
+
+async function onDeletePoint(id) {
+  if (!confirm('Supprimer le point ID ' + id + ' ?\n\nIRRÉVERSIBLE.')) return;
+  try {
+    await rpc('admin_delete_custom_feature', { f_id: id });
+    showStatus('Point supprimé', 'success');
+    await loadPointsPage();
+    refreshStatusBar();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
+
+// ===== TAB: Modération corrections =====
+async function renderCorrections() {
+  const el = document.getElementById('tab-corrections');
+  let h = '<div class="block"><h2>Modération des corrections</h2>';
+  h += '<div class="toolbar"><button class="btn btn-secondary btn-mini" id="corrRefresh">Actualiser</button></div>';
+  h += '<div id="corrTableArea"><div class="loader">Chargement…</div></div>';
+  h += '</div>';
+  el.innerHTML = h;
+  document.getElementById('corrRefresh').onclick = () => loadCorrectionsPage();
+  await loadCorrectionsPage();
+}
+
+async function loadCorrectionsPage() {
+  const area = document.getElementById('corrTableArea');
+  if (!area) return;
+  area.innerHTML = '<div class="loader">Chargement…</div>';
+  try {
+    const [rows, total] = await Promise.all([
+      rpc('admin_list_corrections', { p_limit: correctionsState.pageSize, p_offset: correctionsState.page * correctionsState.pageSize }),
+      rpc('admin_count_corrections', {})
+    ]);
+    correctionsState.rows = rows; correctionsState.total = total;
+    renderCorrectionsTable();
+  } catch (err) {
+    area.innerHTML = '<div class="loader" style="color:#c00">Erreur : ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function renderCorrectionsTable() {
+  const area = document.getElementById('corrTableArea');
+  if (correctionsState.rows.length === 0) {
+    area.innerHTML = '<div class="loader">Aucune correction.</div>';
+    return;
+  }
+  // Detecter dynamiquement les colonnes interessantes (schema corrections peut varier)
+  const sample = correctionsState.rows[0];
+  const cols = Object.keys(sample).filter(k => k !== 'id');
+  let h = '<table class="matrix"><thead><tr><th>ID</th>';
+  cols.forEach(c => { h += '<th>' + escapeHtml(c) + '</th>'; });
+  h += '<th>Action</th></tr></thead><tbody>';
+  correctionsState.rows.forEach(r => {
+    h += '<tr><td>' + r.id + '</td>';
+    cols.forEach(c => {
+      let v = r[c];
+      if (typeof v === 'string' && v.length > 80) v = v.substring(0, 80) + '…';
+      if (c === 'created_at' && v) v = new Date(v).toLocaleDateString('fr-FR');
+      h += '<td style="font-size:11px;text-align:left;max-width:200px;word-break:break-word;">' + escapeHtml(v) + '</td>';
+    });
+    h += '<td class="actions"><button class="btn btn-mini btn-danger" data-delete-corr="' + r.id + '">Supprimer</button></td></tr>';
+  });
+  h += '</tbody></table>';
+
+  const totalPages = Math.max(1, Math.ceil(correctionsState.total / correctionsState.pageSize));
+  h += '<div class="pagination">'
+    + '<button id="cPrev"' + (correctionsState.page === 0 ? ' disabled' : '') + '>‹ Précédent</button>'
+    + '<span>Page ' + (correctionsState.page + 1) + ' / ' + totalPages + ' (' + correctionsState.total + ' au total)</span>'
+    + '<button id="cNext"' + (correctionsState.page + 1 >= totalPages ? ' disabled' : '') + '>Suivant ›</button>'
+    + '</div>';
+  area.innerHTML = h;
+
+  area.querySelectorAll('button[data-delete-corr]').forEach(b => b.onclick = () => onDeleteCorrection(parseInt(b.dataset.deleteCorr)));
+  const prev = document.getElementById('cPrev'); if (prev) prev.onclick = () => { correctionsState.page--; loadCorrectionsPage(); };
+  const next = document.getElementById('cNext'); if (next) next.onclick = () => { correctionsState.page++; loadCorrectionsPage(); };
+}
+
+async function onDeleteCorrection(id) {
+  if (!confirm('Supprimer la correction ID ' + id + ' ?\n\nIRRÉVERSIBLE.')) return;
+  try {
+    await rpc('admin_delete_correction', { corr_id: id });
+    showStatus('Correction supprimée', 'success');
+    await loadCorrectionsPage();
+    refreshStatusBar();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 
 // ----- Init -----
@@ -351,10 +626,7 @@ document.getElementById('loginBtn').addEventListener('click', login);
 document.getElementById('loginPwd').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
 document.getElementById('logoutBtn').addEventListener('click', logout);
 
-// Si session valide, skip login
-if (sessionStorage.getItem(SESSION_KEY)) {
-  showApp();
-}
+if (sessionStorage.getItem(SESSION_KEY)) showApp();
 </script>
 
 </body>
