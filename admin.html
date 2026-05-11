@@ -108,6 +108,23 @@ const HEADERS = {
 };
 
 const SESSION_KEY = 'admin_auth_session';
+const PWD_KEY = 'admin_auth_pwd';  // stocke en sessionStorage (efface a la fermeture du navigateur)
+
+// ----- RPC helper : appelle une fonction admin avec mot de passe en session -----
+async function rpc(fnName, params) {
+  const pwd = sessionStorage.getItem(PWD_KEY);
+  if (!pwd) throw new Error('Session expiree, reconnecte-toi');
+  const body = Object.assign({ password: pwd }, params || {});
+  const r = await fetch(SUPABASE_URL + '/rest/v1/rpc/' + fnName, {
+    method: 'POST', headers: HEADERS,
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(fnName + ' echec: ' + t);
+  }
+  return await r.json();
+}
 
 function showStatus(msg, type) {
   var s = document.getElementById('status');
@@ -158,13 +175,16 @@ async function login() {
     err.textContent = 'Mot de passe incorrect';
     return;
   }
-  // Stocker un flag session (pas le mot de passe lui-meme)
+  // Stocker un flag session + le mot de passe (sessionStorage = efface a la fermeture du navigateur)
+  // Note: nécessaire pour appeler les RPC admin qui exigent le password en parametre
   sessionStorage.setItem(SESSION_KEY, btoa(Date.now() + ':' + Math.random()));
+  sessionStorage.setItem(PWD_KEY, pwd);
   showApp();
 }
 
 function logout() {
   sessionStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(PWD_KEY);
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('mainApp').style.display = 'none';
 }
@@ -282,11 +302,11 @@ async function onAssociationToggle(e) {
   cb.disabled = true;
   try {
     if (cb.checked) {
-      await api('POST', 'map_projets', { carte_id: carteId, projet_id: projetId, added_by: 'admin' });
+      await rpc('admin_associate', { c_id: carteId, p_id: projetId });
       associations.add(carteId + '-' + projetId);
       showStatus('Association ajoutée', 'success');
     } else {
-      await api('DELETE', 'map_projets?carte_id=eq.' + carteId + '&projet_id=eq.' + projetId);
+      await rpc('admin_dissociate', { c_id: carteId, p_id: projetId });
       associations.delete(carteId + '-' + projetId);
       showStatus('Association retirée', 'success');
     }
@@ -317,7 +337,7 @@ async function onCreateProjet() {
 async function onDeleteCarte(id) {
   if (!confirm('Supprimer cette carte de la liste ?\n\nCela ne supprime PAS le fichier HTML, juste son enregistrement (et toutes ses associations).')) return;
   try {
-    await api('DELETE', 'cartes?id=eq.' + id);
+    await rpc('admin_delete_carte', { c_id: id });
     showStatus('Carte supprimée', 'success');
     await loadAll();
     render();
