@@ -1493,6 +1493,76 @@ function buildCartesByProjetForReport(cartesIncluded, cartesIndex) {
   return map;
 }
 
+// Resout la carte d'origine par detection de contenu :
+// charge chaque carte candidate en iframe cachee, appelle findParcelleForPoint(lat, lon)
+// pour chaque point non encore resolu, retient la premiere carte qui retourne un resultat.
+// Retourne : { point_id: { carteId, hash } }
+async function resolveCarteOriginsByContent(points, cartesByProjet, progressFn) {
+  const resolved = {};
+  // Points elligibles : pas de tag explicite, coords valides, projet ayant >1 carte associee
+  const eligible = points.filter(p => {
+    if (p.r.created_on_carte_hash) return false;
+    if (p.lat === null) return false;
+    const list = cartesByProjet[p.r.projet_id] || [];
+    return list.length > 1;  // Si une seule carte, le fallback fait l'affaire
+  });
+  if (eligible.length === 0) { if (progressFn) progressFn('Aucun point à résoudre'); return resolved; }
+
+  // Cartes candidates : union de toutes les cartes des projets concernes, triees par "frequence" (cartes utilisees par + de points en premier)
+  const carteFreq = new Map();
+  eligible.forEach(p => {
+    (cartesByProjet[p.r.projet_id] || []).forEach(c => {
+      carteFreq.set(c.id, (carteFreq.get(c.id) || 0) + 1);
+    });
+  });
+  const carteIdsSorted = [...carteFreq.keys()].sort((a, b) => carteFreq.get(b) - carteFreq.get(a));
+
+  for (let i = 0; i < carteIdsSorted.length; i++) {
+    const cid = carteIdsSorted[i];
+    const carte = cartes.find(c => c.id === cid);
+    if (!carte || !carte.url_github) continue;
+    if (progressFn) progressFn('Carte ' + (i + 1) + '/' + carteIdsSorted.length + ' : ' + (carte.nom || ('#' + cid)));
+
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1280px;height:720px;visibility:hidden;border:0';
+    iframe.src = carte.url_github;
+    document.body.appendChild(iframe);
+
+    // Attendre que findParcelleForPoint soit defini dans l'iframe (timeout 30s)
+    const ready = await new Promise(res => {
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts++;
+        try {
+          const w = iframe.contentWindow;
+          if (w && typeof w.findParcelleForPoint === 'function') { clearInterval(interval); res(true); return; }
+        } catch (e) { /* cross-origin transitoire */ }
+        if (attempts > 60) { clearInterval(interval); res(false); }
+      }, 500);
+    });
+
+    if (ready) {
+      const fn = iframe.contentWindow.findParcelleForPoint;
+      eligible.forEach(p => {
+        if (resolved[p.r.id]) return;
+        const cartesForP = cartesByProjet[p.r.projet_id] || [];
+        if (!cartesForP.find(c => c.id === cid)) return;
+        try {
+          const result = fn(p.lat, p.lon);
+          if (result) resolved[p.r.id] = { carteId: cid, hash: carte.hash };
+        } catch (e) { /* skip */ }
+      });
+    }
+
+    try { document.body.removeChild(iframe); } catch (e) {}
+
+    // Court-circuit si tout est resolu
+    if (eligible.every(p => resolved[p.r.id])) break;
+  }
+  if (progressFn) progressFn(Object.keys(resolved).length + '/' + eligible.length + ' point(s) résolu(s)');
+  return resolved;
+}
+
 // Genere un QR code SVG pour une URL (cache pour ne pas regenerer la meme URL)
 const _qrSvgCache = {};
 function buildQrSvg(url) {
@@ -1562,30 +1632,44 @@ function buildRapportHtml(points, opts) {
       photoHtml += '<a href="' + rapportEscape(src) + '" target="_blank"><img src="' + rapportEscape(src) + '" alt=""></a>';
     });
 
-    // Resolution de la carte d'origine :
-    // 1. Si le point a `created_on_carte_hash`, chercher la carte correspondante (precis)
-    // 2. Sinon fallback : 1ere carte associee au projet (ancien comportement)
+    // Resolution de la carte d'origine, par priorite :
+    // 1. created_on_carte_hash (tag explicite ajoute a la creation)
+    // 2. resolvedOrigins[id] (detection intelligente par contenu)
+    // 3. cartesForPoint[0] (fallback : 1ere carte associee au projet)
     let primaryOrigin = null;
+    let originSource = null;  // 'explicit' | 'detected' | 'fallback'
+    const _makeEntryFromCarte = (origCarte) => {
+      if (!origCarte || !origCarte.url_github) return null;
+      const localEntry = cartesForPoint.find(x => x.id === origCarte.id);
+      return localEntry || {
+        id: origCarte.id,
+        nom: origCarte.nom,
+        link: origCarte.url_github,
+        urlOnline: origCarte.url_github,
+        isLocal: false
+      };
+    };
     if (r.created_on_carte_hash) {
-      const originCarte = cartes.find(c => c.hash === r.created_on_carte_hash);
-      if (originCarte && originCarte.url_github) {
-        const localEntry = cartesForPoint.find(x => x.id === originCarte.id);
-        primaryOrigin = localEntry || {
-          id: originCarte.id,
-          nom: originCarte.nom,
-          link: originCarte.url_github,
-          urlOnline: originCarte.url_github,
-          isLocal: false
-        };
-      }
+      const c = cartes.find(x => x.hash === r.created_on_carte_hash);
+      primaryOrigin = _makeEntryFromCarte(c);
+      if (primaryOrigin) originSource = 'explicit';
+    }
+    if (!primaryOrigin && opts.resolvedOrigins && opts.resolvedOrigins[r.id]) {
+      const ro = opts.resolvedOrigins[r.id];
+      const c = cartes.find(x => x.id === ro.carteId);
+      primaryOrigin = _makeEntryFromCarte(c);
+      if (primaryOrigin) originSource = 'detected';
     }
     let cartesHtml = '';
     const primary = primaryOrigin || cartesForPoint[0];
+    if (primary && !originSource) originSource = 'fallback';
     if (primary) {
       // "Autres" = les autres cartes associees au projet, en excluant la primary
       const others = cartesForPoint.filter(c => c.id !== primary.id);
       const qrSvg = buildQrSvg(primary.urlOnline);
-      const labelText = primaryOrigin ? 'Carte d\'origine' : 'Carte d\'origine (déduite du projet)';
+      let labelText = 'Carte d\'origine';
+      if (originSource === 'detected') labelText = 'Carte d\'origine (détectée par contenu)';
+      else if (originSource === 'fallback') labelText = 'Carte d\'origine (déduite du projet)';
       cartesHtml = '<div class="cartes-box">'
         + '<div class="cartes-label">' + labelText + '</div>'
         + '<div class="carte-primary">'
@@ -1758,6 +1842,8 @@ function showExportOptionsModal() {
       + '<label style="display:block;margin:8px 0;font-size:13px"><input type="checkbox" id="optPhotos" checked> Inclure les photos (téléchargées dans <code>photos/</code>)</label>'
       + '<label style="display:block;margin:8px 0;font-size:13px"><input type="checkbox" id="optRapport" checked> Générer un rapport HTML (<code>rapport.html</code>)</label>'
       + '<div style="font-size:11px;color:#888;margin:2px 0 10px 24px">Cartes avec photos, coords WGS84 + Lambert 93, et mini-carte récap des points.</div>'
+      + '<label style="display:block;margin:8px 0;font-size:13px"><input type="checkbox" id="optSmartOrigin"> Détection intelligente de la carte d\'origine <span style="color:#999">(lent — anciens points sans tag)</span></label>'
+      + '<div style="font-size:11px;color:#888;margin:2px 0 10px 24px">Charge chaque carte candidate en iframe pour identifier celle qui couvre géographiquement le point.</div>'
       + '<label style="display:block;margin:8px 0;font-size:13px"><input type="checkbox" id="optCartes"> Inclure les cartes HTML associées aux projets des points</label>'
       + '<div style="font-size:11px;color:#888;margin:2px 0 10px 24px">Les cartes HTML peuvent peser 5–20 Mo chacune. Le ZIP final peut faire plusieurs dizaines de Mo.</div>'
       + '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'
@@ -1771,7 +1857,8 @@ function showExportOptionsModal() {
     document.getElementById('optOK').onclick = () => close({
       includePhotos: document.getElementById('optPhotos').checked,
       includeRapport: document.getElementById('optRapport').checked,
-      includeCartes: document.getElementById('optCartes').checked
+      includeCartes: document.getElementById('optCartes').checked,
+      smartCarteOrigin: document.getElementById('optSmartOrigin').checked
     });
   });
 }
@@ -1929,12 +2016,24 @@ async function exportPointsFull() {
     }, null, 2));
 
     if (opts.includeRapport) {
-      setProgress(82, 'Génération du rapport HTML…');
       // Lien vers carte locale si on l'a téléchargée, sinon vers GitHub Pages
       const cartesByProjet = buildCartesByProjetForReport(cartesAssocAll, cartesIndex);
+
+      // Detection intelligente des cartes d'origine pour les anciens points
+      let resolvedOrigins = {};
+      if (opts.smartCarteOrigin) {
+        setProgress(76, 'Résolution intelligente des cartes d\'origine…');
+        resolvedOrigins = await resolveCarteOriginsByContent(
+          rapportPoints, cartesByProjet,
+          msg => setProgress(77, 'Smart detect : ' + msg)
+        );
+      }
+
+      setProgress(82, 'Génération du rapport HTML…');
       const rapportHtml = buildRapportHtml(rapportPoints, {
         filters: buildPointsFilterParams(),
-        cartesByProjet: cartesByProjet
+        cartesByProjet: cartesByProjet,
+        resolvedOrigins: resolvedOrigins
       });
       zip.file('rapport.html', rapportHtml);
     }
