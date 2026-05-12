@@ -866,13 +866,16 @@ async function onConfigCarteRasters(carteId) {
 
 // === Configuration des défauts d'une carte ===
 const COMMON_BASE_MAPS = [
-  'OpenStreetMap', 'OpenTopoMap', 'IGN Orthophoto HD', 'Plan IGN J+1',
-  'Photo IGN', 'IGN Plan', 'Satellite', 'Toner', 'Stamen Terrain'
+  'OpenStreetMap', 'OpenTopoMap', 'IGN Plan v2', 'Satellite (Esri)',
+  'Satellite IGN (HD)', 'IGN Orthophoto HD', 'Plan IGN J+1', 'Photo IGN'
 ];
 const COMMON_OVERLAYS = [
   'Toponymes (clusters)', 'Toponymes (polygones)', 'Parcelles toponymes',
-  'Cadastre napoléonien', 'MNT LiDAR HD', 'Plan Terrier',
-  'Reliefs (Mapzen)', 'Ombrage', 'Cadastre actuel'
+  'Cadastre (Parcelles)', 'Cadastre actuel',
+  'Cadastre napoleonien (XIXe)', 'Cadastre napoléonien',
+  'Plan Terrier (XVIIIe)', 'Plan Terrier',
+  'MNT LiDAR HD (ombrage)', 'MNT LiDAR HD',
+  'Tous les toponymes', 'Reliefs (Mapzen)', 'Ombrage'
 ];
 const COMMON_LAYERS = [...COMMON_BASE_MAPS, ...COMMON_OVERLAYS];
 
