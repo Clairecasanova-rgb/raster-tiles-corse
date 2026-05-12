@@ -1353,15 +1353,81 @@ async function onMoveOrCopyPoints(mode) {
 
 async function onEditPoint(id) {
   const r = pointsState.rows.find(x => x.id === id); if (!r) return;
-  const name = prompt('Nom :', r.name || ''); if (name === null) return;
-  const desc = prompt('Description :', r.description || ''); if (desc === null) return;
-  const cat = prompt('Catégorie :', r.category || ''); if (cat === null) return;
-  const col = prompt('Couleur (hex) :', r.color || ''); if (col === null) return;
-  try {
-    await rpc('admin_update_feature', { p_id: id, p_name: name || null, p_description: desc || null, p_category: cat || null, p_color: col || null });
-    showStatus('Point modifié', 'success');
-    await loadPointsPage();
-  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+
+  // Liste des categories existantes (recharger si vide)
+  if (pointsState.distinctCateg.length === 0) {
+    try { pointsState.distinctCateg = await rpc('admin_distinct_categories', {}); } catch(e){}
+  }
+  const cats = pointsState.distinctCateg.map(c => c.category).filter(Boolean).sort();
+  // Inclure la categorie actuelle si jamais elle n'est pas dans la liste distincte (cache)
+  if (r.category && cats.indexOf(r.category) === -1) cats.unshift(r.category);
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  const modal = document.createElement('div');
+  modal.style.cssText = 'background:white;border-radius:8px;padding:20px;max-width:520px;width:92%;max-height:85vh;overflow-y:auto;';
+  let h = '<h2 style="color:#5a3a1a;margin:0 0 14px">Éditer le point #' + id + '</h2>';
+  h += '<div class="form-grid">';
+  h += '<label>Nom :</label><input type="text" id="epName" value="' + escapeHtml(r.name || '') + '">';
+  h += '<label>Description :</label><textarea id="epDesc" rows="3">' + escapeHtml(r.description || '') + '</textarea>';
+  h += '<label>Catégorie :</label><div style="display:flex;gap:6px;align-items:center">'
+    + '<select id="epCatSel" style="flex:1">';
+  cats.forEach(c => { h += '<option value="' + escapeHtml(c) + '"' + (c === r.category ? ' selected' : '') + '>' + escapeHtml(c) + '</option>'; });
+  h += '<option value="__new__">+ Nouvelle catégorie…</option>';
+  h += '<option value="">(aucune)</option>';
+  h += '</select></div>';
+  h += '<label></label><input type="text" id="epCatNew" placeholder="Nom de la nouvelle catégorie" style="display:none">';
+  h += '<label>Couleur :</label><div style="display:flex;gap:6px;align-items:center">'
+    + '<input type="color" id="epColorPick" value="' + escapeHtml(/^#[0-9a-fA-F]{6}$/.test(r.color || '') ? r.color : '#3388ff') + '" style="width:40px;height:28px;padding:0;border:1px solid #ccc">'
+    + '<input type="text" id="epColor" value="' + escapeHtml(r.color || '') + '" placeholder="#RRGGBB ou nom" style="flex:1">'
+    + '</div>';
+  h += '</div>';
+  h += '<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">'
+    + '<button class="btn btn-secondary btn-mini" id="epCancel">Annuler</button>'
+    + '<button class="btn btn-mini" id="epSave">Enregistrer</button>'
+    + '</div>';
+  modal.innerHTML = h;
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  const close = () => document.body.removeChild(overlay);
+
+  const catSel = document.getElementById('epCatSel');
+  const catNew = document.getElementById('epCatNew');
+  catSel.onchange = () => {
+    if (catSel.value === '__new__') { catNew.style.display = ''; catNew.focus(); }
+    else { catNew.style.display = 'none'; catNew.value = ''; }
+  };
+  // Si la categorie actuelle n'est dans aucune option, on cree directement le champ libre
+  if (r.category && cats.indexOf(r.category) === -1) {
+    catSel.value = '__new__'; catNew.style.display = ''; catNew.value = r.category;
+  }
+  // Sync color picker <-> texte
+  const colorPick = document.getElementById('epColorPick');
+  const colorTxt  = document.getElementById('epColor');
+  colorPick.onchange = () => { colorTxt.value = colorPick.value; };
+  colorTxt.onchange = () => { if (/^#[0-9a-fA-F]{6}$/.test(colorTxt.value)) colorPick.value = colorTxt.value; };
+
+  document.getElementById('epCancel').onclick = close;
+  document.getElementById('epSave').onclick = async () => {
+    const name = document.getElementById('epName').value;
+    const desc = document.getElementById('epDesc').value;
+    let cat = catSel.value;
+    if (cat === '__new__') cat = catNew.value.trim();
+    const col = colorTxt.value.trim();
+    try {
+      await rpc('admin_update_feature', { p_id: id, p_name: name || null, p_description: desc || null, p_category: cat || null, p_color: col || null });
+      // Si nouvelle categorie, l'ajouter au cache pour qu'elle apparaisse dans les filtres
+      if (cat && !pointsState.distinctCateg.find(c => c.category === cat)) {
+        pointsState.distinctCateg.push({ category: cat, nb: 1 });
+        pointsState.distinctCateg.sort((a, b) => a.category.localeCompare(b.category));
+      }
+      showStatus('Point modifié', 'success');
+      close();
+      await loadPointsPage();
+      // Rafraichir les chips de filtres (la nouvelle cat doit apparaitre dans le dropdown)
+      if (typeof refreshPointsFilters === 'function') refreshPointsFilters();
+    } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+  };
 }
 async function onBulkDeletePoints() {
   if (pointsState.selected.size === 0) return;
