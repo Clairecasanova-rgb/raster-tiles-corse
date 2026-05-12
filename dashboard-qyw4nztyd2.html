@@ -460,6 +460,7 @@ function renderCartes() {
         + '<td>' + fmtDate(c.created_at) + '</td>'
         + '<td class="actions">'
         + '<button class="btn btn-mini btn-secondary" data-preview-carte="' + c.id + '">Aperçu</button> '
+        + '<button class="btn btn-mini btn-secondary" data-defaults-carte="' + c.id + '">⚙ Défauts</button> '
         + '<button class="btn btn-mini btn-secondary" data-rename-carte="' + c.id + '">Renommer</button> '
         + '<button class="btn btn-mini btn-danger" data-delete-carte="' + c.id + '">Supprimer</button>'
         + '</td></tr>';
@@ -477,6 +478,124 @@ function renderCartes() {
   el.querySelectorAll('button[data-rename-carte]').forEach(b => b.onclick = () => onRenameCarte(parseInt(b.dataset.renameCarte)));
   el.querySelectorAll('button[data-delete-carte]').forEach(b => b.onclick = () => onDeleteCarte(parseInt(b.dataset.deleteCarte)));
   el.querySelectorAll('button[data-preview-carte]').forEach(b => b.onclick = () => { cartePreviewId = parseInt(b.dataset.previewCarte); renderCartes(); });
+  el.querySelectorAll('button[data-defaults-carte]').forEach(b => b.onclick = () => onConfigCarteDefaults(parseInt(b.dataset.defaultsCarte)));
+}
+
+// === Configuration des défauts d'une carte ===
+const COMMON_LAYERS = [
+  'Toponymes (clusters)', 'Toponymes (polygones)', 'Cadastre napoléonien',
+  'MNT LiDAR HD', 'Plan IGN J+1', 'Plan Terrier', 'IGN Orthophoto HD',
+  'OpenStreetMap', 'Photo IGN'
+];
+
+async function onConfigCarteDefaults(carteId) {
+  const c = cartes.find(x => x.id === carteId); if (!c) return;
+  // Recuperer le state actuel
+  let state = {};
+  try {
+    const r = await api('GET', 'cartes?select=default_state,layers_available,communes_disponibles&id=eq.' + carteId);
+    if (r && r[0]) state = r[0].default_state || {};
+  } catch(e) {}
+
+  // Recuperer les projets associes (pour le dropdown projet_override)
+  const associatedProjects = projets.filter(p => associations.has(carteId + '-' + p.id));
+
+  // Construire le modal
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  const modal = document.createElement('div');
+  modal.style.cssText = 'background:white;border-radius:8px;padding:20px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;';
+  let h = '<h2 style="color:#5a3a1a;margin:0 0 12px">Défauts : ' + escapeHtml(c.nom) + '</h2>';
+
+  // 1. Projet override
+  let pOpts = '<option value="">(auto : projet le plus actif)</option>';
+  associatedProjects.forEach(p => {
+    const sel = state.projet_override == p.id ? ' selected' : '';
+    pOpts += '<option value="' + p.id + '"' + sel + '>' + escapeHtml(p.nom) + '</option>';
+  });
+  h += '<div class="form-grid"><label>Projet par défaut :</label><select id="dfPrjOverride">' + pOpts + '</select></div>';
+
+  // 2. Calques
+  h += '<h3 style="margin-top:16px">Calques au chargement</h3>';
+  const currentLayers = state.layers || {};
+  h += '<div id="dfLayersRows" style="max-height:200px;overflow-y:auto;border:1px solid #e5ddd0;padding:8px;border-radius:4px;">';
+  const allLayers = new Set([...COMMON_LAYERS, ...Object.keys(currentLayers)]);
+  allLayers.forEach(name => {
+    const cur = name in currentLayers ? currentLayers[name] : null;
+    h += '<div style="margin:4px 0;font-size:12px"><label>'
+      + '<select class="dfLayerState" data-name="' + escapeHtml(name) + '" style="margin-right:6px">'
+      + '<option value=""' + (cur === null ? ' selected' : '') + '>(auto)</option>'
+      + '<option value="true"' + (cur === true ? ' selected' : '') + '>visible</option>'
+      + '<option value="false"' + (cur === false ? ' selected' : '') + '>masqué</option>'
+      + '</select>'
+      + escapeHtml(name)
+      + '</label></div>';
+  });
+  h += '</div>';
+  h += '<div style="margin-top:6px"><input type="text" id="dfNewLayer" placeholder="Ajouter un calque (nom exact)" style="width:60%"> <button class="btn btn-mini btn-secondary" id="dfAddLayer">+ Ajouter</button></div>';
+
+  // 3. Communes
+  h += '<h3 style="margin-top:16px">Communes actives par défaut</h3>';
+  const currentCommunes = Array.isArray(state.communes) ? state.communes.join(', ') : '';
+  h += '<div class="form-grid"><label>Liste (séparée par virgules) :</label>'
+    + '<input type="text" id="dfCommunes" value="' + escapeHtml(currentCommunes) + '" placeholder="ex: BRANDO, OMESSA"></div>';
+  h += '<div style="font-size:11px;color:#888">Vide = toutes les communes restent visibles.</div>';
+
+  // Boutons
+  h += '<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">'
+    + '<button class="btn btn-secondary btn-mini" id="dfCancel">Annuler</button>'
+    + '<button class="btn btn-secondary btn-mini" id="dfReset">Réinitialiser (tout auto)</button>'
+    + '<button class="btn btn-mini" id="dfSave">Enregistrer</button>'
+    + '</div>';
+
+  modal.innerHTML = h;
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const close = () => document.body.removeChild(overlay);
+  document.getElementById('dfCancel').onclick = close;
+  document.getElementById('dfAddLayer').onclick = () => {
+    const n = document.getElementById('dfNewLayer').value.trim();
+    if (!n) return;
+    const rows = document.getElementById('dfLayersRows');
+    const div = document.createElement('div');
+    div.style.cssText = 'margin:4px 0;font-size:12px';
+    div.innerHTML = '<label><select class="dfLayerState" data-name="' + escapeHtml(n) + '" style="margin-right:6px">'
+      + '<option value="">(auto)</option><option value="true" selected>visible</option><option value="false">masqué</option>'
+      + '</select>' + escapeHtml(n) + '</label>';
+    rows.appendChild(div);
+    document.getElementById('dfNewLayer').value = '';
+  };
+
+  document.getElementById('dfReset').onclick = async () => {
+    if (!confirm('Tout remettre en auto pour cette carte ?')) return;
+    try {
+      await rpc('admin_update_carte_default_state', { p_id: carteId, p_state: {} });
+      showStatus('Défauts réinitialisés', 'success');
+      close();
+    } catch(err) { showStatus('Erreur : ' + err.message, 'error'); }
+  };
+
+  document.getElementById('dfSave').onclick = async () => {
+    const newState = {};
+    const proj = document.getElementById('dfPrjOverride').value;
+    if (proj) newState.projet_override = parseInt(proj);
+    const layers = {};
+    document.querySelectorAll('.dfLayerState').forEach(s => {
+      const name = s.dataset.name;
+      const v = s.value;
+      if (v === 'true') layers[name] = true;
+      else if (v === 'false') layers[name] = false;
+    });
+    if (Object.keys(layers).length > 0) newState.layers = layers;
+    const communes = document.getElementById('dfCommunes').value.trim();
+    if (communes) newState.communes = communes.split(',').map(s => s.trim()).filter(Boolean);
+    try {
+      await rpc('admin_update_carte_default_state', { p_id: carteId, p_state: newState });
+      showStatus('Défauts enregistrés', 'success');
+      close();
+    } catch(err) { showStatus('Erreur : ' + err.message, 'error'); }
+  };
 }
 async function onRenameCarte(id) {
   const c = cartes.find(x => x.id === id); if (!c) return;
@@ -518,9 +637,14 @@ async function renderPoints() {
   h += '<select id="pFilterPhoto"><option value="">Photo ?</option>'
     + '<option value="true"' + (pointsState.hasPhoto === 'true' ? ' selected' : '') + '>Avec photo</option>'
     + '<option value="false"' + (pointsState.hasPhoto === 'false' ? ' selected' : '') + '>Sans photo</option></select>';
+  h += '<select id="pPageSize" title="Points par page">'
+    + [25, 50, 100, 200, 500, 1000].map(s => '<option value="' + s + '"' + (pointsState.pageSize === s ? ' selected' : '') + '>' + s + '/page</option>').join('')
+    + '</select>';
   h += '<button class="btn btn-secondary btn-mini" id="pRefresh">Actualiser</button>';
   h += '<button class="btn btn-secondary btn-mini" id="pExportCsv">Export CSV</button>';
   h += '<button class="btn btn-secondary btn-mini" id="pExportGeo">Export GeoJSON</button>';
+  h += '<button class="btn btn-secondary btn-mini" id="pSelectAllFilter">Sélectionner tous (filtre)</button>';
+  h += '<button class="btn btn-secondary btn-mini" id="pClearSelection">Vider sélection</button>';
   h += '<button class="btn btn-secondary btn-mini" id="pMove" disabled>Déplacer la sélection</button>';
   h += '<button class="btn btn-secondary btn-mini" id="pCopy" disabled>Copier la sélection</button>';
   h += '<button class="btn btn-danger btn-mini" id="pBulkDelete" disabled>Supprimer la sélection</button>';
@@ -531,9 +655,12 @@ async function renderPoints() {
   document.getElementById('pFilterAut').onchange = e => { pointsState.auteur = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
   document.getElementById('pFilterPhoto').onchange = e => { pointsState.hasPhoto = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
   document.getElementById('pRefresh').onclick = () => loadPointsPage();
+  document.getElementById('pPageSize').onchange = e => { pointsState.pageSize = parseInt(e.target.value); pointsState.page = 0; loadPointsPage(); };
   document.getElementById('pBulkDelete').onclick = onBulkDeletePoints;
   document.getElementById('pMove').onclick = () => onMoveOrCopyPoints('move');
   document.getElementById('pCopy').onclick = () => onMoveOrCopyPoints('copy');
+  document.getElementById('pSelectAllFilter').onclick = onSelectAllInFilter;
+  document.getElementById('pClearSelection').onclick = () => { pointsState.selected.clear(); renderPointsTable(); };
   document.getElementById('pExportCsv').onclick = () => exportPoints('csv');
   document.getElementById('pExportGeo').onclick = () => exportPoints('geojson');
   await loadPointsPage();
@@ -625,6 +752,30 @@ function pickProjet(promptText) {
   const pid = parseInt(v.trim());
   if (isNaN(pid) || !projets.find(p => p.id === pid)) { showStatus('ID projet invalide', 'error'); return null; }
   return pid;
+}
+
+async function onSelectAllInFilter() {
+  showStatus('Récupération de toute la sélection…', 'success');
+  try {
+    const all = [];
+    let offset = 0;
+    while (true) {
+      const params = {
+        p_projet_id: pointsState.projetFilter ? parseInt(pointsState.projetFilter) : null,
+        p_category: pointsState.category || null, p_auteur: pointsState.auteur || null,
+        p_has_photo: pointsState.hasPhoto === '' ? null : (pointsState.hasPhoto === 'true'),
+        p_limit: 1000, p_offset: offset
+      };
+      const rows = await rpc('admin_list_features_filtered', params);
+      if (rows.length === 0) break;
+      rows.forEach(r => all.push(r.id));
+      offset += 1000;
+      if (rows.length < 1000) break;
+    }
+    all.forEach(id => pointsState.selected.add(id));
+    renderPointsTable();
+    showStatus(all.length + ' points sélectionnés', 'success');
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 
 async function onMoveOrCopyPoints(mode) {
