@@ -1,0 +1,22 @@
+{
+  "name": "raster-ErculesiH",
+  "safe_name": "raster-ErculesiH",
+  "mode": "hillshade",
+  "zoom_min": 14,
+  "zoom_max": 18,
+  "bounds": [
+    [
+      42.37105299261357,
+      9.30339142766781
+    ],
+    [
+      42.377222097875496,
+      9.310409219801711
+    ]
+  ],
+  "url_template": "./raster-ErculesiH/{z}/{x}/{y}.png",
+  "opacity": 0.7,
+  "blend_mode": "normal",
+  "group": "Rasters importes",
+  "visible_default": true
+}
