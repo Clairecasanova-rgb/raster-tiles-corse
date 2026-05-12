@@ -2027,6 +2027,32 @@ async function exportPointsFull() {
           rapportPoints, cartesByProjet,
           msg => setProgress(77, 'Smart detect : ' + msg)
         );
+
+        // Persister en base : tag created_on_carte_hash sur chaque point résolu
+        const idsToPersist = [];
+        const hashesToPersist = [];
+        Object.keys(resolvedOrigins).forEach(pid => {
+          const ro = resolvedOrigins[pid];
+          if (ro && ro.hash) { idsToPersist.push(parseInt(pid)); hashesToPersist.push(ro.hash); }
+        });
+        if (idsToPersist.length > 0) {
+          setProgress(79, 'Persistance des résolutions (' + idsToPersist.length + ' points)…');
+          try {
+            const n = await rpc('admin_set_carte_origins_bulk', {
+              p_ids: idsToPersist,
+              p_hashes: hashesToPersist
+            });
+            console.log('[Smart detect] ' + n + ' point(s) persisté(s) en base');
+            // Mettre à jour la copie locale pour que le rapport voit l'origine "explicite"
+            rapportPoints.forEach(p => {
+              const ro = resolvedOrigins[p.r.id];
+              if (ro && !p.r.created_on_carte_hash) p.r.created_on_carte_hash = ro.hash;
+            });
+          } catch (e) {
+            console.warn('[Smart detect] persistance échouée:', e);
+            showStatus('Détection OK mais persistance en base échouée : ' + e.message, 'error');
+          }
+        }
       }
 
       setProgress(82, 'Génération du rapport HTML…');
