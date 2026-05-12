@@ -1449,6 +1449,139 @@ async function onDeletePoint(id) {
   try { await rpc('admin_delete_custom_feature', { f_id: id }); showStatus('Supprimé', 'success'); pointsState.selected.delete(id); await loadPointsPage(); refreshStatusBar(); }
   catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
+// Conversion WGS84 -> Lambert 93 (EPSG:2154). Port maison sans dependance proj4.
+function wgs84ToLambert93Helper(lat, lon) {
+  const n = 0.7256077650, c = 11754255.426, e = 0.0818191910;
+  const xs = 700000, ys = 12655612.050, lon0 = 3 * Math.PI / 180;
+  const latRad = lat * Math.PI / 180;
+  const lonRad = lon * Math.PI / 180;
+  const sinLat = Math.sin(latRad);
+  const eSinLat = e * sinLat;
+  const L = 0.5 * Math.log((1 + sinLat) / (1 - sinLat)) - e * 0.5 * Math.log((1 + eSinLat) / (1 - eSinLat));
+  const R = c * Math.exp(-n * L);
+  const gamma = n * (lonRad - lon0);
+  return { x: Math.round(xs + R * Math.sin(gamma)), y: Math.round(ys - R * Math.cos(gamma)) };
+}
+
+// Echappement HTML simple pour rapport
+function rapportEscape(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Genere le rapport HTML autonome (Leaflet via CDN, photos en chemin relatif photos/...)
+function buildRapportHtml(points, opts) {
+  // points : [{r, lat, lon, photoFiles}]
+  const totalPoints = points.length;
+  const byCat = {}, byProj = {};
+  points.forEach(p => {
+    const c = p.r.category || '(sans catégorie)';
+    byCat[c] = (byCat[c] || 0) + 1;
+    const pname = (projets.find(x => x.id === p.r.projet_id) || {}).nom || ('Projet #' + p.r.projet_id);
+    byProj[pname] = (byProj[pname] || 0) + 1;
+  });
+  const fmtDate2 = iso => { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR').slice(0,5); };
+  const filtersHtml = (() => {
+    const f = opts.filters || {};
+    const parts = [];
+    if (f.p_projet_ids && f.p_projet_ids.length) parts.push('Projets : ' + f.p_projet_ids.map(id => (projets.find(x => x.id === id) || {}).nom || ('#' + id)).join(', '));
+    if (f.p_categories && f.p_categories.length) parts.push('Catégories : ' + f.p_categories.join(', '));
+    if (f.p_auteurs && f.p_auteurs.length) parts.push('Auteurs : ' + f.p_auteurs.join(', '));
+    if (f.p_has_photo === true) parts.push('Avec photo');
+    if (f.p_has_photo === false) parts.push('Sans photo');
+    if (f.p_date_from) parts.push('Depuis : ' + f.p_date_from.slice(0, 10));
+    if (f.p_date_to)   parts.push('Jusqu’au : ' + f.p_date_to.slice(0, 10));
+    return parts.length ? parts.map(rapportEscape).join(' · ') : '—';
+  })();
+
+  const validPoints = points.filter(p => p.lat !== null && p.lon !== null);
+  const mapDataJson = JSON.stringify(validPoints.map(p => ({
+    lat: p.lat, lon: p.lon,
+    name: p.r.name || '',
+    category: p.r.category || '',
+    color: p.r.color || '#3388ff'
+  })));
+
+  let cards = '';
+  points.forEach((p, i) => {
+    const r = p.r;
+    const proj = (projets.find(x => x.id === r.projet_id) || {}).nom || ('#' + r.projet_id);
+    const l93 = (p.lat !== null && p.lon !== null) ? wgs84ToLambert93Helper(p.lat, p.lon) : null;
+    let photoHtml = '';
+    [p.photoFiles.photo_file_1, p.photoFiles.photo_file_2].forEach(pf => {
+      if (pf) photoHtml += '<a href="' + rapportEscape(pf) + '" target="_blank"><img src="' + rapportEscape(pf) + '" alt=""></a>';
+    });
+    // Fallback : si pas de photo locale mais photo_url, montre l'URL
+    if (!photoHtml && (r.photo_url || r.photo_url2)) {
+      [r.photo_url, r.photo_url2].forEach(u => {
+        if (u) photoHtml += '<a href="' + rapportEscape(u) + '" target="_blank"><img src="' + rapportEscape(u) + '" alt=""></a>';
+      });
+    }
+    cards += '<article class="card" id="pt-' + r.id + '">'
+      + '<header><h3>' + rapportEscape(r.name || '(sans nom)') + '</h3>'
+      + '<span class="cat" style="background:' + rapportEscape(r.color || '#999') + '">' + rapportEscape(r.category || '') + '</span>'
+      + '</header>'
+      + '<div class="meta">'
+      + '<span><b>Projet :</b> ' + rapportEscape(proj) + '</span>'
+      + '<span><b>Auteur :</b> ' + rapportEscape(r.auteur || '—') + '</span>'
+      + '<span><b>Créé :</b> ' + rapportEscape(fmtDate2(r.created_at)) + '</span>'
+      + '<span><b>Type :</b> ' + rapportEscape(r.feature_type || (r.geometry && r.geometry.type) || '—') + '</span>'
+      + '</div>'
+      + (p.lat !== null ? '<div class="coords">'
+          + '<span><b>WGS84 :</b> ' + p.lat.toFixed(6) + ', ' + p.lon.toFixed(6) + '</span>'
+          + (l93 ? '<span><b>Lambert 93 :</b> ' + l93.x + ', ' + l93.y + '</span>' : '')
+          + '</div>' : '')
+      + (r.description ? '<div class="desc">' + rapportEscape(r.description) + '</div>' : '')
+      + (photoHtml ? '<div class="photos">' + photoHtml + '</div>' : '')
+      + '</article>';
+  });
+
+  return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport export points</title>'
+    + '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">'
+    + '<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"><\/script>'
+    + '<style>'
+    + 'body{margin:0;padding:24px;font-family:Segoe UI,Roboto,sans-serif;background:#f4f1ec;color:#333;max-width:1100px;margin:0 auto}'
+    + 'h1{color:#8b4513;margin:0 0 4px;font-size:24px}'
+    + '.subtitle{color:#8b7355;font-size:13px;margin-bottom:18px}'
+    + '.block{background:#fff;border-radius:8px;padding:16px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.08)}'
+    + '.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}'
+    + '.stat-card{background:#faf6ee;border-left:3px solid #8b4513;padding:8px 12px;font-size:12px}'
+    + '.stat-card h4{margin:0 0 6px;color:#5a3a1a;font-size:12px;text-transform:uppercase;letter-spacing:.5px}'
+    + '.stat-card ul{margin:0;padding:0;list-style:none}'
+    + '.stat-card li{display:flex;justify-content:space-between;padding:2px 0;font-size:11px}'
+    + '#mapPreview{height:380px;border-radius:6px;border:1px solid #e5ddd0}'
+    + '.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px}'
+    + '.card{background:#fff;border-radius:8px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,.06);display:flex;flex-direction:column;gap:8px}'
+    + '.card header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}'
+    + '.card h3{margin:0;font-size:15px;color:#5a3a1a}'
+    + '.card .cat{font-size:10px;color:#fff;padding:2px 8px;border-radius:10px;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.3)}'
+    + '.card .meta{display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:#666}'
+    + '.card .meta b{color:#5a3a1a}'
+    + '.card .coords{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;background:#faf6ee;padding:5px 8px;border-radius:4px;font-family:Consolas,monospace}'
+    + '.card .desc{font-size:12px;color:#555;background:#f9f6f1;padding:6px 8px;border-radius:4px;white-space:pre-wrap}'
+    + '.card .photos{display:flex;flex-wrap:wrap;gap:6px}'
+    + '.card .photos img{width:84px;height:84px;object-fit:cover;border-radius:4px;border:1px solid #ddd;cursor:pointer}'
+    + '.card .photos img:hover{border-color:#8b4513}'
+    + '</style></head><body>'
+    + '<h1>Rapport export points</h1>'
+    + '<div class="subtitle">Généré le ' + new Date().toLocaleString('fr-FR') + ' · ' + totalPoints + ' point(s)</div>'
+    + '<div class="block"><h4 style="margin:0 0 6px;color:#5a3a1a">Filtres appliqués</h4>'
+    + '<div style="font-size:12px;color:#666">' + filtersHtml + '</div></div>'
+    + '<div class="block"><div class="stats">'
+    + '<div class="stat-card"><h4>Par catégorie</h4><ul>'
+    + Object.keys(byCat).sort((a,b)=>byCat[b]-byCat[a]).map(k => '<li><span>' + rapportEscape(k) + '</span><b>' + byCat[k] + '</b></li>').join('')
+    + '</ul></div>'
+    + '<div class="stat-card"><h4>Par projet</h4><ul>'
+    + Object.keys(byProj).sort((a,b)=>byProj[b]-byProj[a]).map(k => '<li><span>' + rapportEscape(k) + '</span><b>' + byProj[k] + '</b></li>').join('')
+    + '</ul></div>'
+    + '</div></div>'
+    + (validPoints.length > 0 ? '<div class="block"><div id="mapPreview"></div></div>' : '')
+    + '<div class="cards">' + cards + '</div>'
+    + '<script>(function(){var pts=' + mapDataJson + ';if(!pts.length||typeof L==="undefined")return;'
+    + 'var m=L.map("mapPreview");L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OSM",maxZoom:18}).addTo(m);'
+    + 'var g=L.featureGroup();pts.forEach(function(p){var mk=L.circleMarker([p.lat,p.lon],{radius:6,color:p.color,fillColor:p.color,fillOpacity:.8,weight:2});mk.bindPopup("<b>"+p.name+"</b><br>"+p.category);mk.addTo(g);});g.addTo(m);try{m.fitBounds(g.getBounds().pad(.1));}catch(e){m.setView([42.3,9.1],9);}})();<\/script>'
+    + '</body></html>';
+}
+
 // Extrait [lat, lon] depuis une geometrie GeoJSON (Point direct, Polygon/MultiPolygon centroide)
 function pointGeomToLatLon(g) {
   if (!g || !g.coordinates) return [null, null];
@@ -1513,6 +1646,8 @@ function showExportOptionsModal() {
     modal.style.cssText = 'background:white;border-radius:8px;padding:20px;max-width:460px;width:92%;';
     modal.innerHTML = '<h2 style="color:#5a3a1a;margin:0 0 14px">Options export complet</h2>'
       + '<label style="display:block;margin:8px 0;font-size:13px"><input type="checkbox" id="optPhotos" checked> Inclure les photos (téléchargées dans <code>photos/</code>)</label>'
+      + '<label style="display:block;margin:8px 0;font-size:13px"><input type="checkbox" id="optRapport" checked> Générer un rapport HTML (<code>rapport.html</code>)</label>'
+      + '<div style="font-size:11px;color:#888;margin:2px 0 10px 24px">Cartes avec photos, coords WGS84 + Lambert 93, et mini-carte récap des points.</div>'
       + '<label style="display:block;margin:8px 0;font-size:13px"><input type="checkbox" id="optCartes"> Inclure les cartes HTML associées aux projets des points</label>'
       + '<div style="font-size:11px;color:#888;margin:2px 0 10px 24px">Les cartes HTML peuvent peser 5–20 Mo chacune. Le ZIP final peut faire plusieurs dizaines de Mo.</div>'
       + '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'
@@ -1525,6 +1660,7 @@ function showExportOptionsModal() {
     document.getElementById('optCancel').onclick = () => close(null);
     document.getElementById('optOK').onclick = () => close({
       includePhotos: document.getElementById('optPhotos').checked,
+      includeRapport: document.getElementById('optRapport').checked,
       includeCartes: document.getElementById('optCartes').checked
     });
   });
@@ -1586,6 +1722,7 @@ async function exportPointsFull() {
     // 1. Préparer GeoJSON + CSV + JSON avec photos relatives
     const features = [];
     const jsonElements = [];
+    const rapportPoints = [];  // pour buildRapportHtml : {r, lat, lon, photoFiles}
     const cols = ['id', 'projet_id', 'name', 'category', 'feature_type', 'latitude', 'longitude', 'auteur', 'created_at', 'description', 'color', 'photo_url', 'photo_url2', 'photo_file_1', 'photo_file_2'];
     const csvRows = [cols.join(';')];
 
@@ -1636,6 +1773,7 @@ async function exportPointsFull() {
       csvRows.push(cols.map(c => JSON.stringify(csvRow[c] === null || csvRow[c] === undefined ? '' : csvRow[c])).join(';'));
 
       jsonElements.push(Object.assign({}, props, { geometry: r.geometry }));
+      rapportPoints.push({ r: r, lat: lat, lon: lon, photoFiles: photoFiles });
     }
 
     // 2. Telechargement des cartes HTML associees (optionnel)
@@ -1681,6 +1819,12 @@ async function exportPointsFull() {
       elements: jsonElements
     }, null, 2));
 
+    if (opts.includeRapport) {
+      setProgress(82, 'Génération du rapport HTML…');
+      const rapportHtml = buildRapportHtml(rapportPoints, { filters: buildPointsFilterParams() });
+      zip.file('rapport.html', rapportHtml);
+    }
+
     setProgress(85, 'Compression…');
     const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
     setProgress(100, 'Téléchargement…');
@@ -1700,6 +1844,7 @@ async function exportPointsFull() {
       msg += ' · ' + cartesDownloaded + ' carte(s)';
       if (cartesFailed > 0) msg += ' (' + cartesFailed + ' échouée(s))';
     }
+    if (opts.includeRapport) msg += ' · rapport.html';
     showStatus(msg, 'success');
   } catch (err) {
     showStatus('Erreur export complet : ' + err.message, 'error');
