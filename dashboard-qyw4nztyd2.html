@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
   body { margin: 0; padding: 24px; font-family: 'Segoe UI', sans-serif; background: #f4f1ec; color: #333; }
   h1 { color: #8b4513; margin: 0 0 6px; font-size: 22px; }
@@ -1176,6 +1177,7 @@ async function renderPoints() {
   h += '<button class="btn btn-secondary btn-mini" id="pRefresh">Actualiser</button>';
   h += '<button class="btn btn-secondary btn-mini" id="pExportCsv">Export CSV</button>';
   h += '<button class="btn btn-secondary btn-mini" id="pExportGeo">Export GeoJSON</button>';
+  h += '<button class="btn btn-secondary btn-mini" id="pExportFull">Export complet (ZIP)</button>';
   h += '<button class="btn btn-secondary btn-mini" id="pSelectAllFilter">Sélectionner tous (filtre)</button>';
   h += '<button class="btn btn-secondary btn-mini" id="pClearSelection">Vider sélection</button>';
   h += '<button class="btn btn-secondary btn-mini" id="pMove" disabled>Déplacer la sélection</button>';
@@ -1196,6 +1198,7 @@ async function renderPoints() {
   document.getElementById('pClearSelection').onclick = () => { pointsState.selected.clear(); renderPointsTable(); };
   document.getElementById('pExportCsv').onclick = () => exportPoints('csv');
   document.getElementById('pExportGeo').onclick = () => exportPoints('geojson');
+  document.getElementById('pExportFull').onclick = () => exportPointsFull();
   await loadPointsPage();
 }
 
@@ -1446,37 +1449,43 @@ async function onDeletePoint(id) {
   try { await rpc('admin_delete_custom_feature', { f_id: id }); showStatus('Supprimé', 'success'); pointsState.selected.delete(id); await loadPointsPage(); refreshStatusBar(); }
   catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
+// Extrait [lat, lon] depuis une geometrie GeoJSON (Point direct, Polygon/MultiPolygon centroide)
+function pointGeomToLatLon(g) {
+  if (!g || !g.coordinates) return [null, null];
+  if (g.type === 'Point') return [g.coordinates[1], g.coordinates[0]];
+  let ring = null;
+  if (g.type === 'Polygon') ring = g.coordinates[0];
+  else if (g.type === 'MultiPolygon') ring = g.coordinates[0] && g.coordinates[0][0];
+  else if (g.type === 'LineString') ring = g.coordinates;
+  if (!ring || !ring.length) return [null, null];
+  let sLat = 0, sLon = 0;
+  ring.forEach(c => { sLon += c[0]; sLat += c[1]; });
+  return [sLat / ring.length, sLon / ring.length];
+}
+
+async function fetchAllPointsForExport() {
+  const all = [];
+  let offset = 0;
+  while (true) {
+    const params = Object.assign({}, buildPointsFilterParams(), { p_limit: 1000, p_offset: offset });
+    const rows = await rpc('admin_list_features_filtered', params);
+    if (rows.length === 0) break;
+    all.push(...rows); offset += 1000;
+    if (rows.length < 1000) break;
+  }
+  return all;
+}
+
 async function exportPoints(format) {
   showStatus('Préparation export…', 'success');
   try {
-    const all = [];
-    let offset = 0;
-    while (true) {
-      const params = Object.assign({}, buildPointsFilterParams(), { p_limit: 1000, p_offset: offset });
-      const rows = await rpc('admin_list_features_filtered', params);
-      if (rows.length === 0) break;
-      all.push(...rows); offset += 1000;
-      if (rows.length < 1000) break;
-    }
+    const all = await fetchAllPointsForExport();
     let blob;
     if (format === 'csv') {
-      // Extrait [lat, lon] depuis une geometrie GeoJSON (Point = direct, Polygon/MultiPolygon = centroide)
-      const geomToLatLon = (g) => {
-        if (!g || !g.coordinates) return [null, null];
-        if (g.type === 'Point') return [g.coordinates[1], g.coordinates[0]];
-        let ring = null;
-        if (g.type === 'Polygon') ring = g.coordinates[0];
-        else if (g.type === 'MultiPolygon') ring = g.coordinates[0] && g.coordinates[0][0];
-        else if (g.type === 'LineString') ring = g.coordinates;
-        if (!ring || !ring.length) return [null, null];
-        let sLat = 0, sLon = 0;
-        ring.forEach(c => { sLon += c[0]; sLat += c[1]; });
-        return [sLat / ring.length, sLon / ring.length];
-      };
       const cols = ['id', 'projet_id', 'name', 'category', 'feature_type', 'latitude', 'longitude', 'auteur', 'created_at', 'photo_url'];
       const rows = [cols.join(';')];
       all.forEach(r => {
-        const [lat, lon] = geomToLatLon(r.geometry);
+        const [lat, lon] = pointGeomToLatLon(r.geometry);
         const enriched = Object.assign({}, r, {
           latitude: lat !== null ? lat.toFixed(6) : '',
           longitude: lon !== null ? lon.toFixed(6) : ''
@@ -1493,6 +1502,123 @@ async function exportPoints(format) {
     a.click();
     showStatus(all.length + ' point(s) exportés', 'success');
   } catch (err) { showStatus('Erreur export : ' + err.message, 'error'); }
+}
+
+// Export ZIP complet : geojson + csv + json + dossier photos/
+async function exportPointsFull() {
+  if (typeof JSZip === 'undefined') { showStatus('JSZip non chargé', 'error'); return; }
+  let all;
+  try {
+    showStatus('Récupération des points…', 'success');
+    all = await fetchAllPointsForExport();
+  } catch (err) { showStatus('Erreur récupération : ' + err.message, 'error'); return; }
+  if (all.length === 0) { showStatus('Aucun point à exporter', 'error'); return; }
+
+  // Estimation photos
+  let photoCount = 0;
+  all.forEach(r => { if (r.photo_url) photoCount++; if (r.photo_url2) photoCount++; });
+  if (photoCount > 50 && !confirm(all.length + ' point(s), ' + photoCount + ' photo(s) à télécharger. Continuer ?')) return;
+
+  // Status persistant
+  const stat = document.createElement('div');
+  stat.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.85);color:#fff;padding:18px 28px;border-radius:8px;z-index:10000;font-size:13px;min-width:280px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.5);';
+  stat.innerHTML = '<div style="font-size:14px;font-weight:600;margin-bottom:10px">Export complet</div>'
+    + '<div id="expBar" style="background:rgba(255,255,255,0.2);border-radius:3px;height:5px;margin-bottom:8px;overflow:hidden"><div id="expFill" style="background:#4CAF50;height:100%;width:0%;transition:width .25s"></div></div>'
+    + '<div id="expLabel" style="color:#ccc">Initialisation…</div>';
+  document.body.appendChild(stat);
+  const setProgress = (pct, lbl) => {
+    const f = document.getElementById('expFill'); if (f) f.style.width = pct + '%';
+    const l = document.getElementById('expLabel'); if (l) l.textContent = lbl;
+  };
+
+  try {
+    const zip = new JSZip();
+    const photosFolder = zip.folder('photos');
+
+    // 1. Préparer GeoJSON + CSV + JSON avec photos relatives
+    const features = [];
+    const jsonElements = [];
+    const cols = ['id', 'projet_id', 'name', 'category', 'feature_type', 'latitude', 'longitude', 'auteur', 'created_at', 'description', 'color', 'photo_url', 'photo_url2', 'photo_file_1', 'photo_file_2'];
+    const csvRows = [cols.join(';')];
+
+    let photoIdx = 0;
+    let photosDownloaded = 0;
+    let photosFailed = 0;
+
+    for (let i = 0; i < all.length; i++) {
+      const r = all[i];
+      setProgress(Math.round(((i + 1) / all.length) * 50), 'Préparation ' + (i + 1) + '/' + all.length);
+
+      const [lat, lon] = pointGeomToLatLon(r.geometry);
+      const photoFiles = { photo_file_1: '', photo_file_2: '' };
+      const photoUrls = [r.photo_url, r.photo_url2];
+      for (let k = 0; k < photoUrls.length; k++) {
+        if (!photoUrls[k]) continue;
+        photoIdx++;
+        // Determiner l'extension depuis l'URL (par defaut jpg)
+        let ext = 'jpg';
+        const m = photoUrls[k].match(/\.([a-z0-9]{3,4})(\?|$)/i);
+        if (m) ext = m[1].toLowerCase();
+        const fname = 'photo_' + r.id + '_' + (k + 1) + '.' + ext;
+        photoFiles['photo_file_' + (k + 1)] = 'photos/' + fname;
+        try {
+          const resp = await fetch(photoUrls[k]);
+          if (resp.ok) {
+            const blob = await resp.blob();
+            photosFolder.file(fname, blob);
+            photosDownloaded++;
+          } else { photosFailed++; }
+        } catch (e) { photosFailed++; console.warn('photo échec', photoUrls[k], e); }
+      }
+
+      const props = {
+        id: r.id, projet_id: r.projet_id, name: r.name, category: r.category,
+        feature_type: r.feature_type, auteur: r.auteur, created_at: r.created_at,
+        description: r.description || '', color: r.color || '',
+        photo_url: r.photo_url || '', photo_url2: r.photo_url2 || '',
+        photo_file_1: photoFiles.photo_file_1, photo_file_2: photoFiles.photo_file_2
+      };
+      features.push({ type: 'Feature', geometry: r.geometry, properties: props });
+
+      const csvRow = Object.assign({}, props, {
+        latitude: lat !== null ? lat.toFixed(6) : '',
+        longitude: lon !== null ? lon.toFixed(6) : ''
+      });
+      csvRows.push(cols.map(c => JSON.stringify(csvRow[c] === null || csvRow[c] === undefined ? '' : csvRow[c])).join(';'));
+
+      jsonElements.push(Object.assign({}, props, { geometry: r.geometry }));
+    }
+
+    setProgress(60, 'Assemblage du ZIP…');
+    zip.file('points.geojson', JSON.stringify({ type: 'FeatureCollection', features: features }, null, 2));
+    zip.file('points.csv', '﻿' + csvRows.join('\n'));
+    zip.file('points.json', JSON.stringify({
+      export_date: new Date().toISOString(),
+      filters: buildPointsFilterParams(),
+      total: jsonElements.length,
+      photos_downloaded: photosDownloaded,
+      photos_failed: photosFailed,
+      elements: jsonElements
+    }, null, 2));
+
+    setProgress(80, 'Compression…');
+    const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+    setProgress(100, 'Téléchargement…');
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(zipBlob);
+    a.download = 'points_complet_' + new Date().toISOString().slice(0, 10) + '.zip';
+    a.click();
+    URL.revokeObjectURL(a.href);
+
+    let msg = all.length + ' point(s) exportés · ' + photosDownloaded + ' photo(s)';
+    if (photosFailed > 0) msg += ' (' + photosFailed + ' échouée(s))';
+    showStatus(msg, 'success');
+  } catch (err) {
+    showStatus('Erreur export complet : ' + err.message, 'error');
+  } finally {
+    if (stat.parentNode) stat.parentNode.removeChild(stat);
+  }
 }
 
 // ===== TAB: Corrections =====
