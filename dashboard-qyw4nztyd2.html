@@ -1468,7 +1468,29 @@ function rapportEscape(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// Genere le rapport HTML autonome (Leaflet via CDN, photos en chemin relatif photos/...)
+// Pour chaque projet_id, liste des cartes liees a inclure dans le rapport :
+// { projet_id: [{id, nom, link: 'cartes/<file>.html' OU url_github}] }
+function buildCartesByProjetForReport(cartesIncluded, cartesIndex) {
+  const map = {};
+  cartesIncluded.forEach(c => {
+    const indexEntry = (cartesIndex || []).find(e => e.id === c.id);
+    const localFile = indexEntry && indexEntry.file ? indexEntry.file : null;
+    const link = localFile || c.url_github || '';
+    if (!link) return;
+    projets.forEach(p => {
+      if (associations.has(c.id + '-' + p.id)) {
+        if (!map[p.id]) map[p.id] = [];
+        if (!map[p.id].find(x => x.id === c.id)) {
+          map[p.id].push({ id: c.id, nom: c.nom, link: link, isLocal: !!localFile });
+        }
+      }
+    });
+  });
+  return map;
+}
+
+// Genere le rapport HTML autonome avec style academique (A4, slate/blue palette)
+// opts: { filters, cartesByProjet }
 function buildRapportHtml(points, opts) {
   // points : [{r, lat, lon, photoFiles}]
   const totalPoints = points.length;
@@ -1498,88 +1520,211 @@ function buildRapportHtml(points, opts) {
     lat: p.lat, lon: p.lon,
     name: p.r.name || '',
     category: p.r.category || '',
-    color: p.r.color || '#3388ff'
+    color: p.r.color || '#3388ff',
+    id: p.r.id
   })));
 
-  let cards = '';
-  points.forEach((p, i) => {
-    const r = p.r;
-    const proj = (projets.find(x => x.id === r.projet_id) || {}).nom || ('#' + r.projet_id);
-    const l93 = (p.lat !== null && p.lon !== null) ? wgs84ToLambert93Helper(p.lat, p.lon) : null;
-    let photoHtml = '';
-    [p.photoFiles.photo_file_1, p.photoFiles.photo_file_2].forEach(pf => {
-      if (pf) photoHtml += '<a href="' + rapportEscape(pf) + '" target="_blank"><img src="' + rapportEscape(pf) + '" alt=""></a>';
+  // Grouper les points par categorie pour la structure en sections
+  const sections = {};
+  points.forEach(p => {
+    const cat = p.r.category || '(sans catégorie)';
+    if (!sections[cat]) sections[cat] = [];
+    sections[cat].push(p);
+  });
+  const sectionKeys = Object.keys(sections).sort();
+
+  // Sommaire
+  let tocHtml = '<div class="toc"><h2>Sommaire</h2>';
+  let elemIdx = 0;
+  sectionKeys.forEach((cat, si) => {
+    tocHtml += '<div class="toc-section">';
+    tocHtml += '<div class="toc-section-title">' + romanize(si + 1) + '. ' + rapportEscape(cat) + ' (' + sections[cat].length + ')</div>';
+    tocHtml += '<ul class="toc-list">';
+    sections[cat].forEach(p => {
+      elemIdx++;
+      tocHtml += '<li><a href="#el-' + elemIdx + '">' + elemIdx + '. ' + rapportEscape(p.r.name || '(sans nom)') + '</a></li>';
     });
-    // Fallback : si pas de photo locale mais photo_url, montre l'URL
-    if (!photoHtml && (r.photo_url || r.photo_url2)) {
-      [r.photo_url, r.photo_url2].forEach(u => {
-        if (u) photoHtml += '<a href="' + rapportEscape(u) + '" target="_blank"><img src="' + rapportEscape(u) + '" alt=""></a>';
-      });
-    }
-    cards += '<article class="card" id="pt-' + r.id + '">'
-      + '<header><h3>' + rapportEscape(r.name || '(sans nom)') + '</h3>'
-      + '<span class="cat" style="background:' + rapportEscape(r.color || '#999') + '">' + rapportEscape(r.category || '') + '</span>'
-      + '</header>'
-      + '<div class="meta">'
-      + '<span><b>Projet :</b> ' + rapportEscape(proj) + '</span>'
-      + '<span><b>Auteur :</b> ' + rapportEscape(r.auteur || '—') + '</span>'
-      + '<span><b>Créé :</b> ' + rapportEscape(fmtDate2(r.created_at)) + '</span>'
-      + '<span><b>Type :</b> ' + rapportEscape(r.feature_type || (r.geometry && r.geometry.type) || '—') + '</span>'
-      + '</div>'
-      + (p.lat !== null ? '<div class="coords">'
-          + '<span><b>WGS84 :</b> ' + p.lat.toFixed(6) + ', ' + p.lon.toFixed(6) + '</span>'
-          + (l93 ? '<span><b>Lambert 93 :</b> ' + l93.x + ', ' + l93.y + '</span>' : '')
-          + '</div>' : '')
-      + (r.description ? '<div class="desc">' + rapportEscape(r.description) + '</div>' : '')
-      + (photoHtml ? '<div class="photos">' + photoHtml + '</div>' : '')
-      + '</article>';
+    tocHtml += '</ul></div>';
+  });
+  tocHtml += '</div>';
+
+  // Sections + elements
+  let bodyHtml = '';
+  elemIdx = 0;
+  sectionKeys.forEach((cat, si) => {
+    const isFirstSection = (si === 0);
+    bodyHtml += '<section class="section' + (isFirstSection ? ' section-after-toc' : ' section-page-break') + '">';
+    bodyHtml += '<div class="section-header">';
+    bodyHtml += '<div class="section-number">' + romanize(si + 1) + '</div>';
+    bodyHtml += '<h2 class="section-title">' + rapportEscape(cat) + '</h2>';
+    bodyHtml += '<span class="section-count">' + sections[cat].length + ' élément' + (sections[cat].length > 1 ? 's' : '') + '</span>';
+    bodyHtml += '</div>';
+
+    sections[cat].forEach((p, idxInSection) => {
+      elemIdx++;
+      const r = p.r;
+      const proj = (projets.find(x => x.id === r.projet_id) || {}).nom || ('Projet #' + r.projet_id);
+      const l93 = (p.lat !== null && p.lon !== null) ? wgs84ToLambert93Helper(p.lat, p.lon) : null;
+      const cartesForPoint = (opts.cartesByProjet || {})[r.projet_id] || [];
+      const isFirst = idxInSection === 0;
+
+      bodyHtml += '<article class="element' + (isFirst ? ' first-in-section' : '') + '" id="el-' + elemIdx + '">';
+      bodyHtml += '<div class="element-header">';
+      bodyHtml += '<span class="element-index">' + elemIdx + '</span>';
+      if (r.color) bodyHtml += '<div class="element-color" style="background:' + rapportEscape(r.color) + '"></div>';
+      bodyHtml += '<span class="element-nom">' + rapportEscape(r.name || '(sans nom)') + '</span>';
+      bodyHtml += '<span class="element-type">' + rapportEscape(cat) + '</span>';
+      bodyHtml += '</div>';
+
+      bodyHtml += '<div class="element-details">';
+      bodyHtml += '<p><strong>Projet :</strong> ' + rapportEscape(proj) + '</p>';
+      bodyHtml += '<p><strong>Auteur :</strong> ' + rapportEscape(r.auteur || '—') + '</p>';
+      bodyHtml += '<p><strong>Date de création :</strong> ' + rapportEscape(fmtDate2(r.created_at)) + '</p>';
+      bodyHtml += '<p><strong>Type géométrique :</strong> ' + rapportEscape(r.feature_type || (r.geometry && r.geometry.type) || '—') + '</p>';
+
+      if (r.description) {
+        bodyHtml += '<div class="desc-block"><strong>Description</strong><p>' + rapportEscape(r.description) + '</p></div>';
+      }
+
+      if (p.lat !== null) {
+        bodyHtml += '<div class="coords-box">';
+        bodyHtml += '<div class="coords-row">';
+        bodyHtml += '<div class="coords-item"><div class="label">WGS 84 (latitude, longitude)</div>' + p.lat.toFixed(6) + ', ' + p.lon.toFixed(6) + '</div>';
+        if (l93) bodyHtml += '<div class="coords-item"><div class="label">Lambert 93 (EPSG:2154)</div>X = ' + l93.x + ' &nbsp; Y = ' + l93.y + '</div>';
+        bodyHtml += '</div></div>';
+      }
+
+      if (cartesForPoint.length > 0) {
+        bodyHtml += '<div class="cartes-box"><div class="cartes-label">Cartes interactives associées</div><ul>';
+        cartesForPoint.forEach(c => {
+          const note = c.isLocal ? ' (locale)' : ' (en ligne)';
+          bodyHtml += '<li><a href="' + rapportEscape(c.link) + '" target="_blank">' + rapportEscape(c.nom || ('Carte #' + c.id)) + '</a><span class="carte-note">' + note + '</span></li>';
+        });
+        bodyHtml += '</ul></div>';
+      }
+
+      // Photos
+      const photosLocal = [p.photoFiles.photo_file_1, p.photoFiles.photo_file_2].filter(Boolean);
+      const photosFallback = [r.photo_url, r.photo_url2].filter(Boolean);
+      const photoSources = photosLocal.length > 0 ? photosLocal : photosFallback;
+      if (photoSources.length > 0) {
+        bodyHtml += '<div class="photos"><div class="photos-title">Documents photographiques</div><div class="photos-grid">';
+        photoSources.forEach(src => {
+          bodyHtml += '<a href="' + rapportEscape(src) + '" target="_blank"><img src="' + rapportEscape(src) + '" alt=""></a>';
+        });
+        bodyHtml += '</div></div>';
+      }
+
+      bodyHtml += '</div></article>';
+    });
+
+    bodyHtml += '</section>';
   });
 
-  return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport export points</title>'
+  return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport — Inventaire des points</title>'
+    + '<link rel="icon" href="data:,">'
     + '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">'
     + '<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"><\/script>'
     + '<style>'
-    + 'body{margin:0;padding:24px;font-family:Segoe UI,Roboto,sans-serif;background:#f4f1ec;color:#333;max-width:1100px;margin:0 auto}'
-    + 'h1{color:#8b4513;margin:0 0 4px;font-size:24px}'
-    + '.subtitle{color:#8b7355;font-size:13px;margin-bottom:18px}'
-    + '.block{background:#fff;border-radius:8px;padding:16px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.08)}'
-    + '.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}'
-    + '.stat-card{background:#faf6ee;border-left:3px solid #8b4513;padding:8px 12px;font-size:12px}'
-    + '.stat-card h4{margin:0 0 6px;color:#5a3a1a;font-size:12px;text-transform:uppercase;letter-spacing:.5px}'
-    + '.stat-card ul{margin:0;padding:0;list-style:none}'
-    + '.stat-card li{display:flex;justify-content:space-between;padding:2px 0;font-size:11px}'
-    + '#mapPreview{height:380px;border-radius:6px;border:1px solid #e5ddd0}'
-    + '.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px}'
-    + '.card{background:#fff;border-radius:8px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,.06);display:flex;flex-direction:column;gap:8px}'
-    + '.card header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}'
-    + '.card h3{margin:0;font-size:15px;color:#5a3a1a}'
-    + '.card .cat{font-size:10px;color:#fff;padding:2px 8px;border-radius:10px;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.3)}'
-    + '.card .meta{display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:#666}'
-    + '.card .meta b{color:#5a3a1a}'
-    + '.card .coords{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;background:#faf6ee;padding:5px 8px;border-radius:4px;font-family:Consolas,monospace}'
-    + '.card .desc{font-size:12px;color:#555;background:#f9f6f1;padding:6px 8px;border-radius:4px;white-space:pre-wrap}'
-    + '.card .photos{display:flex;flex-wrap:wrap;gap:6px}'
-    + '.card .photos img{width:84px;height:84px;object-fit:cover;border-radius:4px;border:1px solid #ddd;cursor:pointer}'
-    + '.card .photos img:hover{border-color:#8b4513}'
+    + '@page { margin: 15mm 12mm; size: A4 portrait; }'
+    + '*, *::before, *::after { box-sizing: border-box; }'
+    + 'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 40px 30px; color: #334155; line-height: 1.55; background: #fff; }'
+    + 'h1 { color: #1e293b; border-bottom: 3px solid #3b82f6; padding-bottom: 10px; margin: 0 0 20px; font-size: 26px; }'
+    + '.meta { color: #64748b; font-size: 13px; margin-bottom: 24px; }'
+    + '.meta p { margin: 4px 0; }'
+    + '.meta strong { color: #1e293b; }'
+    + '.synthese { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 18px; margin-bottom: 28px; }'
+    + '.synthese h2 { margin: 0 0 10px; font-size: 14px; color: #1e293b; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px; }'
+    + '.synthese-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; font-size: 12px; }'
+    + '.synthese ul { margin: 0; padding: 0; list-style: none; }'
+    + '.synthese li { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px dotted #cbd5e1; }'
+    + '.synthese li:last-child { border: none; }'
+    + '.synthese li b { color: #1e293b; }'
+    + '#mapPreview { height: 360px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 28px; }'
+    + '.toc { padding: 18px 22px; margin-bottom: 28px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; }'
+    + '.toc h2 { margin: 0 0 12px; font-size: 14px; color: #1e293b; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid #1e293b; padding-bottom: 6px; }'
+    + '.toc-section { margin-bottom: 12px; break-inside: avoid; }'
+    + '.toc-section-title { font-weight: 600; color: #1e293b; font-size: 12px; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; margin-bottom: 4px; }'
+    + '.toc-list { list-style: none; padding: 0; margin: 0 0 0 12px; }'
+    + '.toc-list li { padding: 1px 0; font-size: 11px; line-height: 1.5; }'
+    + '.toc-list a { color: #334155; text-decoration: none; }'
+    + '.toc-list a:hover { text-decoration: underline; }'
+    + '.section { margin-bottom: 40px; }'
+    + '.section.section-page-break { page-break-before: always; padding-top: 30px; }'
+    + '.section-header { display: flex; align-items: center; gap: 15px; margin-bottom: 22px; padding-bottom: 12px; border-bottom: 3px solid #1e40af; }'
+    + '.section-number { background: #1e40af; color: white; width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; font-family: Georgia, serif; flex-shrink: 0; }'
+    + '.section-title { font-size: 20px; font-weight: 700; color: #1e293b; margin: 0; }'
+    + '.section-count { background: #e0e7ff; color: #3730a3; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: auto; }'
+    + '.element { border: 1px solid #e2e8f0; border-radius: 12px; padding: 22px; margin-bottom: 22px; background: #fff; page-break-before: always; }'
+    + '.element.first-in-section { page-break-before: auto; }'
+    + '.element-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }'
+    + '.element-index { background: transparent; border: 2px solid #94a3b8; color: #64748b; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; flex-shrink: 0; }'
+    + '.element-color { width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; }'
+    + '.element-nom { font-size: 17px; font-weight: 600; color: #1e293b; }'
+    + '.element-type { background: #f1f5f9; color: #64748b; padding: 4px 10px; border-radius: 20px; font-size: 11px; margin-left: auto; }'
+    + '.element-details { color: #475569; font-size: 14px; line-height: 1.7; }'
+    + '.element-details p { margin: 4px 0; }'
+    + '.element-details strong { color: #1e293b; }'
+    + '.coords-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-top: 12px; font-family: "SF Mono", Consolas, Monaco, monospace; font-size: 12px; page-break-inside: avoid; break-inside: avoid; }'
+    + '.coords-box .label { color: #64748b; font-size: 11px; margin-bottom: 4px; font-family: inherit; }'
+    + '.coords-row { display: flex; gap: 20px; flex-wrap: wrap; }'
+    + '.coords-item { flex: 1; min-width: 200px; }'
+    + '.desc-block { background: #fef9e7; border-left: 3px solid #f59e0b; padding: 10px 14px; margin-top: 14px; border-radius: 0 6px 6px 0; }'
+    + '.desc-block strong { display: block; color: #92400e; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }'
+    + '.desc-block p { margin: 0; font-size: 13px; color: #5a3a1a; white-space: pre-wrap; }'
+    + '.cartes-box { background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 6px; padding: 10px 14px; margin-top: 14px; page-break-inside: avoid; }'
+    + '.cartes-label { font-size: 11px; font-weight: 600; color: #065f46; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }'
+    + '.cartes-box ul { list-style: none; padding: 0; margin: 0; }'
+    + '.cartes-box li { font-size: 12px; padding: 2px 0; }'
+    + '.cartes-box a { color: #047857; font-weight: 500; text-decoration: none; }'
+    + '.cartes-box a:hover { text-decoration: underline; }'
+    + '.carte-note { color: #6b7280; font-size: 10px; margin-left: 6px; font-style: italic; }'
+    + '.photos { margin-top: 18px; page-break-inside: avoid; }'
+    + '.photos-title { font-weight: 600; color: #1e293b; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; }'
+    + '.photos-grid { display: flex; flex-direction: column; gap: 14px; align-items: center; }'
+    + '.photos img { max-width: 100%; max-height: 420px; border-radius: 8px; object-fit: contain; box-shadow: 0 1px 3px rgba(0,0,0,.1); }'
+    + '@media print {'
+    + '  body { padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }'
+    + '  #mapPreview { page-break-after: always; }'
+    + '  .element { page-break-before: always; padding-top: 20px; }'
+    + '  .element.first-in-section { page-break-before: auto; }'
+    + '  .section-header { break-after: avoid; }'
+    + '  .coords-box, .cartes-box, .photos { break-inside: avoid; }'
+    + '  .toc-section { break-inside: avoid; }'
+    + '}'
     + '</style></head><body>'
-    + '<h1>Rapport export points</h1>'
-    + '<div class="subtitle">Généré le ' + new Date().toLocaleString('fr-FR') + ' · ' + totalPoints + ' point(s)</div>'
-    + '<div class="block"><h4 style="margin:0 0 6px;color:#5a3a1a">Filtres appliqués</h4>'
-    + '<div style="font-size:12px;color:#666">' + filtersHtml + '</div></div>'
-    + '<div class="block"><div class="stats">'
-    + '<div class="stat-card"><h4>Par catégorie</h4><ul>'
+    + '<h1>Rapport — Inventaire des points</h1>'
+    + '<div class="meta">'
+    + '<p><strong>Date de génération :</strong> ' + new Date().toLocaleString('fr-FR') + '</p>'
+    + '<p><strong>Total :</strong> ' + totalPoints + ' point' + (totalPoints > 1 ? 's' : '') + '</p>'
+    + '<p><strong>Filtres :</strong> ' + filtersHtml + '</p>'
+    + '</div>'
+    + '<div class="synthese"><h2>Synthèse</h2><div class="synthese-grid">'
+    + '<div><h3 style="margin:0 0 6px;font-size:12px;color:#475569">Répartition par catégorie</h3><ul>'
     + Object.keys(byCat).sort((a,b)=>byCat[b]-byCat[a]).map(k => '<li><span>' + rapportEscape(k) + '</span><b>' + byCat[k] + '</b></li>').join('')
     + '</ul></div>'
-    + '<div class="stat-card"><h4>Par projet</h4><ul>'
+    + '<div><h3 style="margin:0 0 6px;font-size:12px;color:#475569">Répartition par projet</h3><ul>'
     + Object.keys(byProj).sort((a,b)=>byProj[b]-byProj[a]).map(k => '<li><span>' + rapportEscape(k) + '</span><b>' + byProj[k] + '</b></li>').join('')
     + '</ul></div>'
     + '</div></div>'
-    + (validPoints.length > 0 ? '<div class="block"><div id="mapPreview"></div></div>' : '')
-    + '<div class="cards">' + cards + '</div>'
+    + (validPoints.length > 0 ? '<div id="mapPreview"></div>' : '')
+    + tocHtml
+    + bodyHtml
     + '<script>(function(){var pts=' + mapDataJson + ';if(!pts.length||typeof L==="undefined")return;'
-    + 'var m=L.map("mapPreview");L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OSM",maxZoom:18}).addTo(m);'
-    + 'var g=L.featureGroup();pts.forEach(function(p){var mk=L.circleMarker([p.lat,p.lon],{radius:6,color:p.color,fillColor:p.color,fillOpacity:.8,weight:2});mk.bindPopup("<b>"+p.name+"</b><br>"+p.category);mk.addTo(g);});g.addTo(m);try{m.fitBounds(g.getBounds().pad(.1));}catch(e){m.setView([42.3,9.1],9);}})();<\/script>'
+    + 'var m=L.map("mapPreview");L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap",maxZoom:18}).addTo(m);'
+    + 'var g=L.featureGroup();pts.forEach(function(p){var mk=L.circleMarker([p.lat,p.lon],{radius:6,color:p.color,fillColor:p.color,fillOpacity:.85,weight:2});mk.bindPopup("<b>"+p.name+"</b><br>"+p.category);mk.addTo(g);});g.addTo(m);try{m.fitBounds(g.getBounds().pad(.1));}catch(e){m.setView([42.3,9.1],9);}})();<\/script>'
     + '</body></html>';
+}
+
+// Helper pour les chiffres romains (sommaire / sections)
+function romanize(n) {
+  if (n < 1) return '';
+  const map = [['M',1000],['CM',900],['D',500],['CD',400],['C',100],['XC',90],['L',50],['XL',40],['X',10],['IX',9],['V',5],['IV',4],['I',1]];
+  let res = '';
+  for (let i = 0; i < map.length; i++) {
+    while (n >= map[i][1]) { res += map[i][0]; n -= map[i][1]; }
+  }
+  return res;
 }
 
 // Extrait [lat, lon] depuis une geometrie GeoJSON (Point direct, Polygon/MultiPolygon centroide)
@@ -1684,18 +1829,17 @@ async function exportPointsFull() {
   let photoCount = 0;
   if (opts.includePhotos) all.forEach(r => { if (r.photo_url) photoCount++; if (r.photo_url2) photoCount++; });
 
-  // Determiner les cartes a inclure (unique carte_ids associes aux projets des points)
-  let cartesToInclude = [];
-  if (opts.includeCartes) {
-    const projIds = new Set(all.map(r => r.projet_id));
-    const carteIdsSet = new Set();
-    projIds.forEach(pid => {
-      cartes.forEach(c => {
-        if (associations.has(c.id + '-' + pid) && c.url_github) carteIdsSet.add(c.id);
-      });
+  // Determiner les cartes associees aux projets des points (utilisees pour
+  // le rapport meme si l'utilisateur n'a pas coche "Inclure les cartes")
+  const projIds = new Set(all.map(r => r.projet_id));
+  const carteIdsSet = new Set();
+  projIds.forEach(pid => {
+    cartes.forEach(c => {
+      if (associations.has(c.id + '-' + pid) && c.url_github) carteIdsSet.add(c.id);
     });
-    cartesToInclude = cartes.filter(c => carteIdsSet.has(c.id));
-  }
+  });
+  const cartesAssocAll = cartes.filter(c => carteIdsSet.has(c.id));
+  const cartesToInclude = opts.includeCartes ? cartesAssocAll : [];
 
   // Confirmation si gros volume
   let warn = '';
@@ -1821,7 +1965,12 @@ async function exportPointsFull() {
 
     if (opts.includeRapport) {
       setProgress(82, 'Génération du rapport HTML…');
-      const rapportHtml = buildRapportHtml(rapportPoints, { filters: buildPointsFilterParams() });
+      // Lien vers carte locale si on l'a téléchargée, sinon vers GitHub Pages
+      const cartesByProjet = buildCartesByProjetForReport(cartesAssocAll, cartesIndex);
+      const rapportHtml = buildRapportHtml(rapportPoints, {
+        filters: buildPointsFilterParams(),
+        cartesByProjet: cartesByProjet
+      });
       zip.file('rapport.html', rapportHtml);
     }
 
