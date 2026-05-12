@@ -9,6 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <style>
   body { margin: 0; padding: 24px; font-family: 'Segoe UI', sans-serif; background: #f4f1ec; color: #333; }
   h1 { color: #8b4513; margin: 0 0 6px; font-size: 22px; }
@@ -1469,24 +1470,47 @@ function rapportEscape(s) {
 }
 
 // Pour chaque projet_id, liste des cartes liees a inclure dans le rapport :
-// { projet_id: [{id, nom, link: 'cartes/<file>.html' OU url_github}] }
+// { projet_id: [{id, nom, link, urlOnline, isLocal}] }
+//   link      = chemin local (cartes/x.html) si telechargee, sinon url GitHub Pages
+//   urlOnline = url GitHub Pages (toujours, pour le QR code)
 function buildCartesByProjetForReport(cartesIncluded, cartesIndex) {
   const map = {};
   cartesIncluded.forEach(c => {
     const indexEntry = (cartesIndex || []).find(e => e.id === c.id);
     const localFile = indexEntry && indexEntry.file ? indexEntry.file : null;
-    const link = localFile || c.url_github || '';
+    const urlOnline = c.url_github || '';
+    const link = localFile || urlOnline;
     if (!link) return;
     projets.forEach(p => {
       if (associations.has(c.id + '-' + p.id)) {
         if (!map[p.id]) map[p.id] = [];
         if (!map[p.id].find(x => x.id === c.id)) {
-          map[p.id].push({ id: c.id, nom: c.nom, link: link, isLocal: !!localFile });
+          map[p.id].push({ id: c.id, nom: c.nom, link: link, urlOnline: urlOnline, isLocal: !!localFile });
         }
       }
     });
   });
   return map;
+}
+
+// Genere un QR code SVG pour une URL (cache pour ne pas regenerer la meme URL)
+const _qrSvgCache = {};
+function buildQrSvg(url) {
+  if (!url || typeof qrcode === 'undefined') return '';
+  if (_qrSvgCache[url] !== undefined) return _qrSvgCache[url];
+  try {
+    const qr = qrcode(0, 'M');  // type auto, ECC level M
+    qr.addData(url);
+    qr.make();
+    // createSvgTag(cellSize, margin) - margin en cells
+    const svg = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+    _qrSvgCache[url] = svg;
+    return svg;
+  } catch (e) {
+    console.warn('QR génération échec:', url, e);
+    _qrSvgCache[url] = '';
+    return '';
+  }
 }
 
 // Genere le rapport HTML autonome avec style academique (A4, slate/blue palette)
@@ -1595,12 +1619,33 @@ function buildRapportHtml(points, opts) {
       }
 
       if (cartesForPoint.length > 0) {
-        bodyHtml += '<div class="cartes-box"><div class="cartes-label">Cartes interactives associées</div><ul>';
-        cartesForPoint.forEach(c => {
-          const note = c.isLocal ? ' (locale)' : ' (en ligne)';
-          bodyHtml += '<li><a href="' + rapportEscape(c.link) + '" target="_blank">' + rapportEscape(c.nom || ('Carte #' + c.id)) + '</a><span class="carte-note">' + note + '</span></li>';
-        });
-        bodyHtml += '</ul></div>';
+        const primary = cartesForPoint[0];
+        const others = cartesForPoint.slice(1);
+        const qrSvg = buildQrSvg(primary.urlOnline);
+        bodyHtml += '<div class="cartes-box">';
+        bodyHtml += '<div class="cartes-label">Carte interactive d\'origine</div>';
+        bodyHtml += '<div class="carte-primary">';
+        bodyHtml += '<div class="carte-primary-info">';
+        bodyHtml += '<div class="carte-primary-nom">' + rapportEscape(primary.nom || ('Carte #' + primary.id)) + '</div>';
+        bodyHtml += '<div class="carte-primary-link"><a href="' + rapportEscape(primary.link) + '" target="_blank">' + rapportEscape(primary.link) + '</a>';
+        bodyHtml += '<span class="carte-note">' + (primary.isLocal ? '(fichier local)' : '(en ligne)') + '</span></div>';
+        if (primary.urlOnline && primary.urlOnline !== primary.link) {
+          bodyHtml += '<div class="carte-primary-link" style="margin-top:2px"><span style="color:#6b7280;font-size:10px">URL en ligne :</span> <a href="' + rapportEscape(primary.urlOnline) + '" target="_blank">' + rapportEscape(primary.urlOnline) + '</a></div>';
+        }
+        bodyHtml += '</div>';
+        if (qrSvg) {
+          bodyHtml += '<div class="carte-qr" title="Scanner pour ouvrir la carte sur mobile">' + qrSvg + '</div>';
+        }
+        bodyHtml += '</div>';
+        if (others.length > 0) {
+          bodyHtml += '<div class="cartes-others"><div class="cartes-label" style="font-size:10px;margin-top:8px">Autres cartes liées au projet</div><ul>';
+          others.forEach(c => {
+            const note = c.isLocal ? ' (locale)' : ' (en ligne)';
+            bodyHtml += '<li><a href="' + rapportEscape(c.link) + '" target="_blank">' + rapportEscape(c.nom || ('Carte #' + c.id)) + '</a><span class="carte-note">' + note + '</span></li>';
+          });
+          bodyHtml += '</ul></div>';
+        }
+        bodyHtml += '</div>';
       }
 
       // Photos
@@ -1672,13 +1717,20 @@ function buildRapportHtml(points, opts) {
     + '.desc-block { background: #fef9e7; border-left: 3px solid #f59e0b; padding: 10px 14px; margin-top: 14px; border-radius: 0 6px 6px 0; }'
     + '.desc-block strong { display: block; color: #92400e; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }'
     + '.desc-block p { margin: 0; font-size: 13px; color: #5a3a1a; white-space: pre-wrap; }'
-    + '.cartes-box { background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 6px; padding: 10px 14px; margin-top: 14px; page-break-inside: avoid; }'
+    + '.cartes-box { background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 6px; padding: 12px 14px; margin-top: 14px; page-break-inside: avoid; }'
     + '.cartes-label { font-size: 11px; font-weight: 600; color: #065f46; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }'
     + '.cartes-box ul { list-style: none; padding: 0; margin: 0; }'
     + '.cartes-box li { font-size: 12px; padding: 2px 0; }'
-    + '.cartes-box a { color: #047857; font-weight: 500; text-decoration: none; }'
+    + '.cartes-box a { color: #047857; font-weight: 500; text-decoration: none; word-break: break-all; }'
     + '.cartes-box a:hover { text-decoration: underline; }'
     + '.carte-note { color: #6b7280; font-size: 10px; margin-left: 6px; font-style: italic; }'
+    + '.carte-primary { display: flex; align-items: center; gap: 14px; }'
+    + '.carte-primary-info { flex: 1; min-width: 0; }'
+    + '.carte-primary-nom { font-size: 14px; font-weight: 600; color: #064e3b; margin-bottom: 3px; }'
+    + '.carte-primary-link { font-size: 11px; line-height: 1.5; word-break: break-all; }'
+    + '.carte-qr { flex-shrink: 0; background: #fff; padding: 6px; border-radius: 4px; border: 1px solid #6ee7b7; }'
+    + '.carte-qr svg { display: block; width: 100px; height: 100px; }'
+    + '.cartes-others { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #6ee7b7; }'
     + '.photos { margin-top: 18px; page-break-inside: avoid; }'
     + '.photos-title { font-weight: 600; color: #1e293b; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; }'
     + '.photos-grid { display: flex; flex-direction: column; gap: 14px; align-items: center; }'
