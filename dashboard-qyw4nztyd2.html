@@ -121,6 +121,12 @@
     <span class="pill" id="stat-lockout">— lockout</span>
   </div>
 
+  <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;">
+    <input type="search" id="globalSearch" placeholder="Recherche globale (points, corrections, lexique, projets…)" style="flex:1;padding:6px 10px;font-size:13px;border:1px solid #d0c0b0;border-radius:6px">
+    <button class="btn btn-mini" id="globalSearchBtn">Rechercher</button>
+  </div>
+  <div id="searchResults" style="display:none"></div>
+
   <div class="tabs">
     <button class="tab active" data-tab="dashboard">Vue d'ensemble</button>
     <button class="tab" data-tab="matrice">Matrice</button>
@@ -130,6 +136,7 @@
     <button class="tab" data-tab="corrections">Corrections</button>
     <button class="tab" data-tab="lexique">Lexique</button>
     <button class="tab" data-tab="ref">Références</button>
+    <button class="tab" data-tab="rasters">Rasters</button>
     <button class="tab" data-tab="securite">Sécurité</button>
   </div>
 
@@ -141,6 +148,7 @@
   <div id="tab-corrections" class="tab-content"></div>
   <div id="tab-lexique" class="tab-content"></div>
   <div id="tab-ref" class="tab-content"></div>
+  <div id="tab-rasters" class="tab-content"></div>
   <div id="tab-securite" class="tab-content"></div>
 </div>
 
@@ -298,8 +306,141 @@ function renderActiveTab() {
     case 'corrections': renderCorrections(); break;
     case 'lexique': renderLexique(); break;
     case 'ref': renderRef(); break;
+    case 'rasters': renderRasters(); break;
     case 'securite': renderSecurite(); break;
   }
+}
+
+// ===== RECHERCHE TRANSVERSALE =====
+async function doGlobalSearch() {
+  const q = document.getElementById('globalSearch').value.trim();
+  const out = document.getElementById('searchResults');
+  if (q.length < 2) { out.style.display = 'none'; return; }
+  out.style.display = 'block';
+  out.innerHTML = '<div class="block"><div class="loader">Recherche…</div></div>';
+  try {
+    const rows = await rpc('admin_search_all', { p_query: q, p_limit: 100 });
+    if (rows.length === 0) { out.innerHTML = '<div class="block">Aucun résultat pour "' + escapeHtml(q) + '"</div>'; return; }
+    const byType = {};
+    rows.forEach(r => { if (!byType[r.result_type]) byType[r.result_type] = []; byType[r.result_type].push(r); });
+    const TYPE_LABELS = { point: 'Points', correction: 'Corrections', lexique: 'Lexique', projet: 'Projets', assoc_lex: 'Associations lexique' };
+    let h = '<div class="block"><h2>Résultats pour "' + escapeHtml(q) + '" (' + rows.length + ')</h2>';
+    Object.keys(byType).forEach(type => {
+      h += '<h3>' + (TYPE_LABELS[type] || type) + ' (' + byType[type].length + ')</h3>';
+      h += '<table class="matrix"><thead><tr><th>ID</th><th class="name-col">Libellé</th><th>Détails</th><th>Projet</th></tr></thead><tbody>';
+      byType[type].forEach(r => {
+        const proj = r.projet_id ? ((projets.find(p => p.id == r.projet_id) || {}).nom || '#' + r.projet_id) : '—';
+        h += '<tr>'
+          + '<td style="font-family:monospace;font-size:10px">' + escapeHtml(r.result_id) + '</td>'
+          + '<td class="name-cell">' + escapeHtml(r.label) + '</td>'
+          + '<td style="font-size:11px;color:#666;max-width:300px">' + escapeHtml(r.snippet) + '</td>'
+          + '<td style="font-size:11px">' + escapeHtml(proj) + '</td>'
+          + '</tr>';
+      });
+      h += '</tbody></table>';
+    });
+    h += '<button class="btn btn-secondary btn-mini" id="searchClose">Fermer</button></div>';
+    out.innerHTML = h;
+    document.getElementById('searchClose').onclick = () => { out.style.display = 'none'; document.getElementById('globalSearch').value = ''; };
+  } catch (err) {
+    out.innerHTML = '<div class="block" style="color:#c00">Erreur : ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+// ===== TAB: Rasters (GitHub Pages) =====
+const GITHUB_OWNER = 'Clairecasanova-rgb';
+const GITHUB_REPO = 'raster-tiles-corse';
+const GITHUB_PAT_KEY = 'github_pat_admin';
+
+async function renderRasters() {
+  const el = document.getElementById('tab-rasters');
+  let h = '<div class="block"><h2>Rasters / Tile sets</h2>';
+  h += '<div class="toolbar">';
+  h += '<button class="btn btn-secondary btn-mini" id="rRefresh">Actualiser</button>';
+  h += '<button class="btn btn-secondary btn-mini" id="rSetToken">Configurer token GitHub</button>';
+  h += '</div><div id="rastersArea"><div class="loader">Chargement depuis GitHub…</div></div>';
+  h += '<div style="margin-top:12px;font-size:11px;color:#888;border-top:1px solid #eee;padding-top:8px">'
+    + 'Lecture publique = pas besoin de token. Pour <b>supprimer</b> un raster : Personal Access Token GitHub nécessaire (Settings → Developer settings → PAT classic, scope <code>public_repo</code>). Le token est stocké en localStorage uniquement.'
+    + '</div></div>';
+  el.innerHTML = h;
+  document.getElementById('rRefresh').onclick = () => renderRasters();
+  document.getElementById('rSetToken').onclick = () => {
+    const cur = localStorage.getItem(GITHUB_PAT_KEY) || '';
+    const t = prompt('Personal Access Token GitHub (scope public_repo). Vide pour effacer :', cur);
+    if (t === null) return;
+    if (t.trim() === '') { localStorage.removeItem(GITHUB_PAT_KEY); showStatus('Token effacé', 'success'); }
+    else { localStorage.setItem(GITHUB_PAT_KEY, t.trim()); showStatus('Token enregistré', 'success'); }
+  };
+
+  try {
+    const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('GitHub ' + r.status);
+    const items = await r.json();
+    const folders = items.filter(i => i.type === 'dir');
+    const files = items.filter(i => i.type === 'file');
+    let h2 = '<table class="matrix"><thead><tr><th class="name-col">Dossier raster</th><th>Type</th><th>Action</th></tr></thead><tbody>';
+    folders.forEach(f => {
+      h2 += '<tr>'
+        + '<td class="name-cell">📂 ' + escapeHtml(f.name) + '</td>'
+        + '<td style="font-size:11px">tile set</td>'
+        + '<td class="actions">'
+        + '<a href="' + escapeHtml(f.html_url) + '" target="_blank" class="btn btn-mini btn-secondary">Voir GitHub</a> '
+        + '<button class="btn btn-mini btn-danger" data-del-raster="' + escapeHtml(f.name) + '">Supprimer</button>'
+        + '</td></tr>';
+    });
+    files.forEach(f => {
+      h2 += '<tr>'
+        + '<td class="name-cell">📄 ' + escapeHtml(f.name) + ' <span style="color:#888;font-size:10px">(' + Math.round(f.size/1024) + ' Ko)</span></td>'
+        + '<td style="font-size:11px">fichier</td>'
+        + '<td class="actions"><a href="' + escapeHtml(f.html_url) + '" target="_blank" class="btn btn-mini btn-secondary">Voir</a></td></tr>';
+    });
+    h2 += '</tbody></table>';
+    h2 += '<div style="margin-top:12px;font-size:12px;color:#5a3a1a"><b>Pour ajouter un raster :</b> génère les tiles via <code>raster_to_tiles.py</code> en local, puis push le dossier vers le repo <code>' + GITHUB_REPO + '</code>. Il apparaîtra ici automatiquement.</div>';
+    document.getElementById('rastersArea').innerHTML = h2;
+    document.querySelectorAll('button[data-del-raster]').forEach(b => b.onclick = () => onDeleteRaster(b.dataset.delRaster));
+  } catch (err) {
+    document.getElementById('rastersArea').innerHTML = '<div class="loader" style="color:#c00">Erreur GitHub API : ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+async function onDeleteRaster(folderName) {
+  const pat = localStorage.getItem(GITHUB_PAT_KEY);
+  if (!pat) { showStatus('Token GitHub requis. Configure-le d\'abord.', 'error'); return; }
+  if (!confirm('Supprimer le dossier "' + folderName + '" du repo GitHub ?\n\nCela supprime TOUS les fichiers du dossier (peut être beaucoup). IRRÉVERSIBLE sur GitHub Pages (mais récupérable via git history).')) return;
+  showStatus('Suppression en cours…', 'success');
+  try {
+    // 1. Lister tous les fichiers récursivement
+    const allFiles = await listFolderRecursive(folderName);
+    if (allFiles.length === 0) { showStatus('Dossier vide', 'success'); return; }
+    if (!confirm(allFiles.length + ' fichier(s) à supprimer. Continuer ?')) return;
+    let deleted = 0;
+    for (const f of allFiles) {
+      const r = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${f.path}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + pat, 'Accept': 'application/vnd.github+json' },
+        body: JSON.stringify({ message: 'admin: delete ' + f.path, sha: f.sha })
+      });
+      if (r.ok) deleted++;
+    }
+    showStatus(deleted + '/' + allFiles.length + ' fichier(s) supprimé(s)', 'success');
+    setTimeout(() => renderRasters(), 1500);
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
+
+async function listFolderRecursive(folderPath) {
+  const r = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${folderPath}`);
+  if (!r.ok) return [];
+  const items = await r.json();
+  let all = [];
+  for (const item of items) {
+    if (item.type === 'file') all.push({ path: item.path, sha: item.sha });
+    else if (item.type === 'dir') {
+      const sub = await listFolderRecursive(item.path);
+      all = all.concat(sub);
+    }
+  }
+  return all;
 }
 
 // ===== TAB: Dashboard =====
@@ -324,6 +465,8 @@ async function renderDashboard() {
   h += '<div class="chart-grid">';
   h += '<div class="chart-wrap"><h3>Points par projet (top 10)</h3><canvas id="chartPointsProjet"></canvas></div>';
   h += '<div class="chart-wrap"><h3>Points par catégorie (top 10)</h3><canvas id="chartPointsCateg"></canvas></div>';
+  h += '<div class="chart-wrap"><h3>Activité (30 derniers jours)</h3><canvas id="chartTimeline"></canvas></div>';
+  h += '<div class="chart-wrap"><h3>Top contributeurs</h3><canvas id="chartTopContribs"></canvas></div>';
   h += '</div>';
   el.innerHTML = h;
   // Destruct old charts
@@ -346,6 +489,34 @@ async function renderDashboard() {
       options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
     });
   } catch (e) { console.warn('chart categ:', e); }
+  try {
+    const timeline = await rpc('admin_activity_timeline', { p_days: 30 });
+    chartInstances.timeline = new Chart(document.getElementById('chartTimeline'), {
+      type: 'line',
+      data: {
+        labels: timeline.map(t => t.day),
+        datasets: [
+          { label: 'Points', data: timeline.map(t => t.nb_points), borderColor: '#8b4513', backgroundColor: 'rgba(139,69,19,0.1)', tension: 0.2, fill: true },
+          { label: 'Corrections', data: timeline.map(t => t.nb_corrections), borderColor: '#c47e3e', backgroundColor: 'rgba(196,126,62,0.1)', tension: 0.2, fill: true }
+        ]
+      },
+      options: { plugins: { legend: { display: true, position: 'bottom' } }, scales: { y: { beginAtZero: true } } }
+    });
+  } catch (e) { console.warn('chart timeline:', e); }
+  try {
+    const tops = await rpc('admin_top_contributors', { p_limit: 8 });
+    chartInstances.contribs = new Chart(document.getElementById('chartTopContribs'), {
+      type: 'bar',
+      data: {
+        labels: tops.map(t => t.auteur),
+        datasets: [
+          { label: 'Points', data: tops.map(t => t.nb_points), backgroundColor: '#8b4513' },
+          { label: 'Corrections', data: tops.map(t => t.nb_corrections), backgroundColor: '#c47e3e' }
+        ]
+      },
+      options: { indexAxis: 'y', plugins: { legend: { display: true, position: 'bottom' } }, scales: { x: { beginAtZero: true, stacked: true }, y: { stacked: true } } }
+    });
+  } catch (e) { console.warn('chart contribs:', e); }
 }
 
 // ===== TAB: Matrice =====
@@ -1326,9 +1497,40 @@ async function onEditSavedSelection(id, rows) {
 // ===== TAB: Sécurité =====
 async function renderSecurite() {
   const el = document.getElementById('tab-securite');
-  el.innerHTML = '<div class="block"><h2>Audit log (admin)</h2><div id="auditArea"><div class="loader">Chargement…</div></div></div>'
+  el.innerHTML = '<div class="block"><h2>Backups quotidiens</h2><div id="backupArea"><div class="loader">Chargement…</div></div></div>'
+    + '<div class="block"><h2>Audit log (admin)</h2><div id="auditArea"><div class="loader">Chargement…</div></div></div>'
     + '<div class="block"><h2>Tentatives de login</h2><div id="loginArea"><div class="loader">Chargement…</div></div></div>'
     + '<div class="block"><h2>Lockout status</h2><div id="lockArea"><div class="loader">Chargement…</div></div></div>';
+  // Backup logs
+  try {
+    const logs = await rpc('admin_get_backup_logs', { p_limit: 30 });
+    let h = '';
+    if (logs.length === 0) {
+      h = '<div class="loader">Aucun backup loggé.<br><br>Pour activer le logging, ajoute dans <code>backup_supabase.py</code> la variable <code>ADMIN_PWD</code> et relance.</div>';
+    } else {
+      const last = logs[0];
+      const hoursAgo = Math.floor((Date.now() - new Date(last.run_at).getTime()) / 3600000);
+      let alert = '';
+      if (last.success && hoursAgo < 30) alert = '<span class="pill ok">✓ Dernier backup OK il y a ' + hoursAgo + 'h</span>';
+      else if (!last.success) alert = '<span class="pill bad">🚨 Dernier backup en ÉCHEC</span>';
+      else alert = '<span class="pill warn">⚠ Dernier backup il y a ' + hoursAgo + 'h (> 24h attendu)</span>';
+      h = '<div style="margin-bottom:8px">' + alert + '</div>';
+      h += '<table class="matrix"><thead><tr><th>Date</th><th>Statut</th><th>Taille</th><th>Tables</th><th>Lignes</th><th>Durée</th><th>Destination</th></tr></thead><tbody>';
+      logs.forEach(l => {
+        h += '<tr>'
+          + '<td style="font-size:11px">' + fmtDateTime(l.run_at) + '</td>'
+          + '<td>' + (l.success ? '<span style="color:#155724">✓ OK</span>' : '<span style="color:#721c24">✗ ' + escapeHtml(l.error_msg || 'ÉCHEC') + '</span>') + '</td>'
+          + '<td style="font-size:11px">' + (l.size_mb ? l.size_mb.toFixed(2) + ' Mo' : '—') + '</td>'
+          + '<td style="font-size:11px">' + (l.nb_tables ?? '—') + '</td>'
+          + '<td style="font-size:11px">' + (l.nb_rows ? l.nb_rows.toLocaleString('fr-FR') : '—') + '</td>'
+          + '<td style="font-size:11px">' + (l.duration_seconds ? l.duration_seconds + 's' : '—') + '</td>'
+          + '<td style="font-size:11px">' + escapeHtml(l.destination || '—') + '</td>'
+          + '</tr>';
+      });
+      h += '</tbody></table>';
+    }
+    document.getElementById('backupArea').innerHTML = h;
+  } catch (err) { document.getElementById('backupArea').innerHTML = '<div class="loader" style="color:#c00">' + escapeHtml(err.message) + '</div>'; }
   try {
     const audit = await rpc('admin_get_audit_log', { p_limit: 100 });
     let h = '';
@@ -1365,6 +1567,8 @@ async function renderSecurite() {
 document.getElementById('loginBtn').addEventListener('click', login);
 document.getElementById('loginPwd').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
 document.getElementById('logoutBtn').addEventListener('click', logout);
+document.getElementById('globalSearchBtn').addEventListener('click', doGlobalSearch);
+document.getElementById('globalSearch').addEventListener('keydown', e => { if (e.key === 'Enter') doGlobalSearch(); });
 if (sessionStorage.getItem(SESSION_KEY)) showApp();
 </script>
 
