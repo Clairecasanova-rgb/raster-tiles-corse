@@ -1345,10 +1345,30 @@ async function exportPoints(format) {
     }
     let blob;
     if (format === 'csv') {
-      const cols = ['id', 'projet_id', 'name', 'category', 'auteur', 'created_at', 'photo_url', 'feature_type'];
+      // Extrait [lat, lon] depuis une geometrie GeoJSON (Point = direct, Polygon/MultiPolygon = centroide)
+      const geomToLatLon = (g) => {
+        if (!g || !g.coordinates) return [null, null];
+        if (g.type === 'Point') return [g.coordinates[1], g.coordinates[0]];
+        let ring = null;
+        if (g.type === 'Polygon') ring = g.coordinates[0];
+        else if (g.type === 'MultiPolygon') ring = g.coordinates[0] && g.coordinates[0][0];
+        else if (g.type === 'LineString') ring = g.coordinates;
+        if (!ring || !ring.length) return [null, null];
+        let sLat = 0, sLon = 0;
+        ring.forEach(c => { sLon += c[0]; sLat += c[1]; });
+        return [sLat / ring.length, sLon / ring.length];
+      };
+      const cols = ['id', 'projet_id', 'name', 'category', 'feature_type', 'latitude', 'longitude', 'auteur', 'created_at', 'photo_url'];
       const rows = [cols.join(';')];
-      all.forEach(r => rows.push(cols.map(c => JSON.stringify(r[c] === null || r[c] === undefined ? '' : r[c])).join(';')));
-      blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+      all.forEach(r => {
+        const [lat, lon] = geomToLatLon(r.geometry);
+        const enriched = Object.assign({}, r, {
+          latitude: lat !== null ? lat.toFixed(6) : '',
+          longitude: lon !== null ? lon.toFixed(6) : ''
+        });
+        rows.push(cols.map(c => JSON.stringify(enriched[c] === null || enriched[c] === undefined ? '' : enriched[c])).join(';'));
+      });
+      blob = new Blob(['﻿' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
     } else {
       const fc = { type: 'FeatureCollection', features: all.map(r => ({ type: 'Feature', geometry: r.geometry, properties: { id: r.id, projet_id: r.projet_id, name: r.name, category: r.category, auteur: r.auteur, created_at: r.created_at, photo_url: r.photo_url } })) };
       blob = new Blob([JSON.stringify(fc, null, 2)], { type: 'application/geo+json' });
