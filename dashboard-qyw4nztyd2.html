@@ -5,6 +5,9 @@
 <title>Admin — Toponymie Corse</title>
 <meta name="robots" content="noindex,nofollow">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <style>
   body { margin: 0; padding: 24px; font-family: 'Segoe UI', sans-serif; background: #f4f1ec; color: #333; }
   h1 { color: #8b4513; margin: 0 0 6px; font-size: 22px; }
@@ -468,6 +471,7 @@ async function renderDashboard() {
   h += '<div class="chart-wrap"><h3>Activité (30 derniers jours)</h3><canvas id="chartTimeline"></canvas></div>';
   h += '<div class="chart-wrap"><h3>Top contributeurs</h3><canvas id="chartTopContribs"></canvas></div>';
   h += '</div>';
+  h += '<div class="block"><h2>Heatmap des points</h2><div id="heatmapDashboard" style="height:380px;border-radius:4px;border:1px solid #e5ddd0"></div></div>';
   el.innerHTML = h;
   // Destruct old charts
   Object.values(chartInstances).forEach(c => { try { c.destroy(); } catch(e){} });
@@ -517,6 +521,21 @@ async function renderDashboard() {
       options: { indexAxis: 'y', plugins: { legend: { display: true, position: 'bottom' } }, scales: { x: { beginAtZero: true, stacked: true }, y: { stacked: true } } }
     });
   } catch (e) { console.warn('chart contribs:', e); }
+  // Heatmap
+  try {
+    const pts = await rpc('admin_points_for_heatmap', { p_limit: 5000 });
+    const heatEl = document.getElementById('heatmapDashboard');
+    if (heatEl && pts.length > 0) {
+      if (chartInstances.heatmap) { chartInstances.heatmap.remove(); }
+      const map = L.map(heatEl, { zoomControl: true }).setView([42.15, 9.1], 9);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM', maxZoom: 18 }).addTo(map);
+      const heatData = pts.filter(p => p.lat && p.lon).map(p => [parseFloat(p.lat), parseFloat(p.lon), 0.5]);
+      L.heatLayer(heatData, { radius: 18, blur: 22, maxZoom: 12 }).addTo(map);
+      const bounds = L.latLngBounds(heatData.map(p => [p[0], p[1]]));
+      if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
+      chartInstances.heatmap = map;
+    }
+  } catch (e) { console.warn('heatmap:', e); }
 }
 
 // ===== TAB: Matrice =====
@@ -616,19 +635,31 @@ async function onDeleteProjet(id) {
 
 // ===== TAB: Cartes =====
 let cartePreviewId = null;
-function renderCartes() {
+let carteStatsCache = null;
+
+async function renderCartes() {
   const el = document.getElementById('tab-cartes');
+  // Fetch stats par carte (1 seule fois par session)
+  if (carteStatsCache === null) {
+    try { carteStatsCache = await rpc('admin_stats_per_carte', {}); }
+    catch(e) { carteStatsCache = []; }
+  }
+  const statsById = {};
+  (carteStatsCache || []).forEach(s => { statsById[s.carte_id] = s; });
   let h = '<div class="block"><h2>Cartes (' + cartes.length + ')</h2>';
   if (cartes.length === 0) h += '<div class="loader">Aucune carte.</div>';
   else {
-    h += '<table class="matrix"><thead><tr><th>ID</th><th class="name-col">Nom</th><th>Hash</th><th>URL</th><th>Créée</th><th>Actions</th></tr></thead><tbody>';
+    h += '<table class="matrix"><thead><tr><th>ID</th><th class="name-col">Nom</th><th>Hash</th><th>Projets</th><th>Points</th><th>Dernière maj</th><th>URL</th><th>Actions</th></tr></thead><tbody>';
     cartes.forEach(c => {
       const url = c.url_github || '';
+      const s = statsById[c.id] || {};
       h += '<tr><td>' + c.id + '</td>'
         + '<td class="name-cell">' + escapeHtml(c.nom) + '</td>'
         + '<td style="font-family:monospace;font-size:10px">' + escapeHtml(c.hash) + '</td>'
+        + '<td style="font-size:11px">' + (s.nb_projets || 0) + '</td>'
+        + '<td style="font-size:11px">' + (s.nb_points || 0).toLocaleString('fr-FR') + '</td>'
+        + '<td style="font-size:11px">' + (s.last_activity ? fmtDate(s.last_activity) : '—') + '</td>'
         + '<td>' + (url ? '<a href="' + escapeHtml(url) + '" target="_blank" style="font-size:10px;color:#8b4513">→ ouvrir</a>' : '—') + '</td>'
-        + '<td>' + fmtDate(c.created_at) + '</td>'
         + '<td class="actions">'
         + '<button class="btn btn-mini btn-secondary" data-preview-carte="' + c.id + '">Aperçu</button> '
         + '<button class="btn btn-mini btn-secondary" data-defaults-carte="' + c.id + '">⚙ Défauts</button> '
@@ -654,9 +685,9 @@ function renderCartes() {
 
 // === Configuration des défauts d'une carte ===
 const COMMON_LAYERS = [
-  'Toponymes (clusters)', 'Toponymes (polygones)', 'Cadastre napoléonien',
-  'MNT LiDAR HD', 'Plan IGN J+1', 'Plan Terrier', 'IGN Orthophoto HD',
-  'OpenStreetMap', 'Photo IGN'
+  'Toponymes (clusters)', 'Toponymes (polygones)', 'Parcelles toponymes',
+  'Cadastre napoléonien', 'MNT LiDAR HD', 'Plan IGN J+1', 'Plan Terrier',
+  'IGN Orthophoto HD', 'OpenStreetMap', 'Photo IGN'
 ];
 
 async function onConfigCarteDefaults(carteId) {
@@ -670,6 +701,18 @@ async function onConfigCarteDefaults(carteId) {
 
   // Recuperer les projets associes (pour le dropdown projet_override)
   const associatedProjects = projets.filter(p => associations.has(carteId + '-' + p.id));
+
+  // Recuperer les categories perso utilisees par les projets associes
+  let categoriesPerso = [];
+  if (associatedProjects.length > 0) {
+    const projIds = associatedProjects.map(p => p.id);
+    try {
+      const rows = await api('GET', 'custom_features?select=category&projet_id=in.(' + projIds.join(',') + ')&limit=10000');
+      const set = new Set();
+      (rows || []).forEach(r => { if (r.category) set.add(r.category); });
+      categoriesPerso = Array.from(set).sort();
+    } catch(e) { console.warn('fetch categories:', e); }
+  }
 
   // Construire le modal
   const overlay = document.createElement('div');
@@ -686,22 +729,37 @@ async function onConfigCarteDefaults(carteId) {
   });
   h += '<div class="form-grid"><label>Projet par défaut :</label><select id="dfPrjOverride">' + pOpts + '</select></div>';
 
-  // 2. Calques
+  // 2. Calques - structurés en 3 groupes
   h += '<h3 style="margin-top:16px">Calques au chargement</h3>';
   const currentLayers = state.layers || {};
-  h += '<div id="dfLayersRows" style="max-height:200px;overflow-y:auto;border:1px solid #e5ddd0;padding:8px;border-radius:4px;">';
-  const allLayers = new Set([...COMMON_LAYERS, ...Object.keys(currentLayers)]);
-  allLayers.forEach(name => {
+  const renderLayerRow = (name, group) => {
     const cur = name in currentLayers ? currentLayers[name] : null;
-    h += '<div style="margin:4px 0;font-size:12px"><label>'
-      + '<select class="dfLayerState" data-name="' + escapeHtml(name) + '" style="margin-right:6px">'
+    return '<div style="margin:3px 0;font-size:12px;display:flex;gap:6px;align-items:center">'
+      + '<select class="dfLayerState" data-name="' + escapeHtml(name) + '" style="font-size:11px">'
       + '<option value=""' + (cur === null ? ' selected' : '') + '>(auto)</option>'
       + '<option value="true"' + (cur === true ? ' selected' : '') + '>visible</option>'
       + '<option value="false"' + (cur === false ? ' selected' : '') + '>masqué</option>'
       + '</select>'
-      + escapeHtml(name)
-      + '</label></div>';
-  });
+      + '<span>' + escapeHtml(name) + '</span>'
+      + (group ? '<span style="color:#888;font-size:10px">(' + group + ')</span>' : '')
+      + '</div>';
+  };
+  h += '<div id="dfLayersRows" style="max-height:300px;overflow-y:auto;border:1px solid #e5ddd0;padding:8px;border-radius:4px;">';
+  // Groupe 1 : calques standard
+  h += '<div style="font-size:11px;color:#5a3a1a;font-weight:600;margin-bottom:4px">Calques standards</div>';
+  COMMON_LAYERS.forEach(name => { h += renderLayerRow(name, ''); });
+  // Groupe 2 : catégories personnalisées du/des projet(s) associé(s)
+  if (categoriesPerso.length > 0) {
+    h += '<div style="font-size:11px;color:#5a3a1a;font-weight:600;margin:10px 0 4px">Catégories personnalisées (' + categoriesPerso.length + ')</div>';
+    categoriesPerso.forEach(cat => { h += renderLayerRow(cat, 'catégorie'); });
+  }
+  // Groupe 3 : calques custom déjà présents dans state mais hors COMMON_LAYERS / catégories
+  const known = new Set([...COMMON_LAYERS, ...categoriesPerso]);
+  const customLayers = Object.keys(currentLayers).filter(k => !known.has(k));
+  if (customLayers.length > 0) {
+    h += '<div style="font-size:11px;color:#5a3a1a;font-weight:600;margin:10px 0 4px">Calques custom</div>';
+    customLayers.forEach(name => { h += renderLayerRow(name, ''); });
+  }
   h += '</div>';
   h += '<div style="margin-top:6px"><input type="text" id="dfNewLayer" placeholder="Ajouter un calque (nom exact)" style="width:60%"> <button class="btn btn-mini btn-secondary" id="dfAddLayer">+ Ajouter</button></div>';
 
@@ -783,7 +841,7 @@ async function onDeleteCarte(id) {
 }
 
 // ===== TAB: Points (custom_features) =====
-let pointsState = { projetFilter: '', category: '', auteur: '', hasPhoto: '', page: 0, pageSize: 25, total: 0, rows: [], selected: new Set(), distinctCateg: [], distinctAuteurs: [] };
+let pointsState = { projetFilter: '', category: '', auteur: '', hasPhoto: '', dateFrom: '', dateTo: '', page: 0, pageSize: 25, total: 0, rows: [], selected: new Set(), distinctCateg: [], distinctAuteurs: [] };
 
 async function renderPoints() {
   const el = document.getElementById('tab-points');
@@ -808,6 +866,8 @@ async function renderPoints() {
   h += '<select id="pFilterPhoto"><option value="">Photo ?</option>'
     + '<option value="true"' + (pointsState.hasPhoto === 'true' ? ' selected' : '') + '>Avec photo</option>'
     + '<option value="false"' + (pointsState.hasPhoto === 'false' ? ' selected' : '') + '>Sans photo</option></select>';
+  h += '<label style="font-size:11px;color:#5a3a1a">Du</label><input type="date" id="pDateFrom" value="' + escapeHtml(pointsState.dateFrom) + '" style="font-size:11px">';
+  h += '<label style="font-size:11px;color:#5a3a1a">au</label><input type="date" id="pDateTo" value="' + escapeHtml(pointsState.dateTo) + '" style="font-size:11px">';
   h += '<select id="pPageSize" title="Points par page">'
     + [25, 50, 100, 200, 500, 1000].map(s => '<option value="' + s + '"' + (pointsState.pageSize === s ? ' selected' : '') + '>' + s + '/page</option>').join('')
     + '</select>';
@@ -825,6 +885,8 @@ async function renderPoints() {
   document.getElementById('pFilterCat').onchange = e => { pointsState.category = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
   document.getElementById('pFilterAut').onchange = e => { pointsState.auteur = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
   document.getElementById('pFilterPhoto').onchange = e => { pointsState.hasPhoto = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
+  document.getElementById('pDateFrom').onchange = e => { pointsState.dateFrom = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
+  document.getElementById('pDateTo').onchange = e => { pointsState.dateTo = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
   document.getElementById('pRefresh').onclick = () => loadPointsPage();
   document.getElementById('pPageSize').onchange = e => { pointsState.pageSize = parseInt(e.target.value); pointsState.page = 0; loadPointsPage(); };
   document.getElementById('pBulkDelete').onclick = onBulkDeletePoints;
@@ -846,12 +908,14 @@ async function loadPointsPage() {
     p_category: pointsState.category || null,
     p_auteur: pointsState.auteur || null,
     p_has_photo: pointsState.hasPhoto === '' ? null : (pointsState.hasPhoto === 'true'),
+    p_date_from: pointsState.dateFrom || null,
+    p_date_to: pointsState.dateTo ? pointsState.dateTo + 'T23:59:59' : null,
     p_limit: pointsState.pageSize, p_offset: pointsState.page * pointsState.pageSize
   };
   try {
     const [rows, total] = await Promise.all([
       rpc('admin_list_features_filtered', params),
-      rpc('admin_count_features_filtered', { p_projet_id: params.p_projet_id, p_category: params.p_category, p_auteur: params.p_auteur, p_has_photo: params.p_has_photo })
+      rpc('admin_count_features_filtered', { p_projet_id: params.p_projet_id, p_category: params.p_category, p_auteur: params.p_auteur, p_has_photo: params.p_has_photo, p_date_from: params.p_date_from, p_date_to: params.p_date_to })
     ]);
     pointsState.rows = rows; pointsState.total = total;
     renderPointsTable();
@@ -935,6 +999,8 @@ async function onSelectAllInFilter() {
         p_projet_id: pointsState.projetFilter ? parseInt(pointsState.projetFilter) : null,
         p_category: pointsState.category || null, p_auteur: pointsState.auteur || null,
         p_has_photo: pointsState.hasPhoto === '' ? null : (pointsState.hasPhoto === 'true'),
+        p_date_from: pointsState.dateFrom || null,
+        p_date_to: pointsState.dateTo ? pointsState.dateTo + 'T23:59:59' : null,
         p_limit: 1000, p_offset: offset
       };
       const rows = await rpc('admin_list_features_filtered', params);
@@ -1006,6 +1072,8 @@ async function exportPoints(format) {
         p_projet_id: pointsState.projetFilter ? parseInt(pointsState.projetFilter) : null,
         p_category: pointsState.category || null, p_auteur: pointsState.auteur || null,
         p_has_photo: pointsState.hasPhoto === '' ? null : (pointsState.hasPhoto === 'true'),
+        p_date_from: pointsState.dateFrom || null,
+        p_date_to: pointsState.dateTo ? pointsState.dateTo + 'T23:59:59' : null,
         p_limit: 1000, p_offset: offset
       };
       const rows = await rpc('admin_list_features_filtered', params);
@@ -1104,7 +1172,7 @@ async function onEditCorrection(id) {
 }
 
 // ===== TAB: Lexique =====
-let lexiqueState = { subtab: 'termes', search: '', categorie: '', statut: '', page: 0, pageSize: 50, total: 0, rows: [], lexiqueCategories: [], lexiqueStatuts: [], definitionsLexiqueId: null, defsRows: [], assocsRows: [] };
+let lexiqueState = { subtab: 'termes', search: '', categorie: '', statut: '', page: 0, pageSize: 50, total: 0, rows: [], lexiqueCategories: [], lexiqueStatuts: [], definitionsLexiqueId: null, defsRows: [], assocsRows: [], selected: new Set() };
 
 async function renderLexique() {
   const el = document.getElementById('tab-lexique');
@@ -1138,6 +1206,10 @@ function renderLexiqueTermes() {
     + '<select id="lexStatut">' + statOpts + '</select>'
     + '<button class="btn btn-secondary btn-mini" id="lexRefresh">Chercher</button>'
     + '<button class="btn btn-mini" id="lexCreate">+ Nouveau terme</button>'
+    + '<button class="btn btn-secondary btn-mini" id="lexExport">Export CSV</button>'
+    + '<button class="btn btn-mini" id="lexBulkValid" style="background:#28a745" disabled>Valider sélection</button>'
+    + '<button class="btn btn-secondary btn-mini" id="lexBulkStatus" disabled>Statut...</button>'
+    + '<button class="btn btn-secondary btn-mini" id="lexClearSel">Vider</button>'
     + '</div><div id="lexTermesArea"><div class="loader">Chargement…</div></div></div>';
   c.innerHTML = h;
   document.getElementById('lexSearch').onkeydown = e => { if (e.key === 'Enter') { lexiqueState.search = e.target.value; lexiqueState.page = 0; loadLexiqueTermes(); } };
@@ -1145,7 +1217,69 @@ function renderLexiqueTermes() {
   document.getElementById('lexStatut').onchange = e => { lexiqueState.statut = e.target.value; lexiqueState.page = 0; loadLexiqueTermes(); };
   document.getElementById('lexRefresh').onclick = () => { lexiqueState.search = document.getElementById('lexSearch').value; lexiqueState.page = 0; loadLexiqueTermes(); };
   document.getElementById('lexCreate').onclick = onCreateLexique;
+  document.getElementById('lexExport').onclick = onExportLexique;
+  document.getElementById('lexBulkValid').onclick = () => onBulkLexiqueStatus('valide');
+  document.getElementById('lexBulkStatus').onclick = onBulkLexiqueStatusPrompt;
+  document.getElementById('lexClearSel').onclick = () => { lexiqueState.selected.clear(); loadLexiqueTermes(); };
   loadLexiqueTermes();
+}
+
+function updateLexBulkBtns() {
+  const n = lexiqueState.selected.size;
+  ['lexBulkValid', 'lexBulkStatus'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) {
+      b.disabled = n === 0;
+      if (id === 'lexBulkValid') b.textContent = n === 0 ? 'Valider sélection' : '✓ Valider ' + n;
+      if (id === 'lexBulkStatus') b.textContent = n === 0 ? 'Statut...' : 'Statut → ' + n;
+    }
+  });
+}
+
+async function onBulkLexiqueStatus(newStatus) {
+  if (lexiqueState.selected.size === 0) return;
+  if (!confirm('Passer ' + lexiqueState.selected.size + ' terme(s) au statut "' + newStatus + '" ?')) return;
+  try {
+    const ids = Array.from(lexiqueState.selected);
+    const n = await rpc('admin_bulk_update_lexique_status', { p_ids: ids, p_new_status: newStatus });
+    showStatus(n + ' terme(s) mis à jour', 'success');
+    lexiqueState.selected.clear();
+    loadLexiqueTermes(); refreshStatusBar();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
+
+async function onBulkLexiqueStatusPrompt() {
+  const s = prompt('Nouveau statut pour ' + lexiqueState.selected.size + ' terme(s) :\n(valide / propose / rejete)', 'valide');
+  if (!s) return;
+  onBulkLexiqueStatus(s.trim());
+}
+
+async function onExportLexique() {
+  showStatus('Export lexique en cours…', 'success');
+  try {
+    const all = [];
+    let offset = 0;
+    while (true) {
+      const rows = await rpc('admin_list_lexique', {
+        p_search: lexiqueState.search || null,
+        p_categorie: lexiqueState.categorie || null,
+        p_statut: lexiqueState.statut || null,
+        p_limit: 1000, p_offset: offset
+      });
+      if (rows.length === 0) break;
+      all.push(...rows); offset += 1000;
+      if (rows.length < 1000) break;
+    }
+    if (all.length === 0) { showStatus('Aucun terme à exporter', 'error'); return; }
+    const cols = ['id', 'terme', 'terme_normalise', 'categorie', 'statut', 'created_at', 'updated_at'];
+    const lines = [cols.join(';')];
+    all.forEach(r => lines.push(cols.map(c => JSON.stringify(r[c] === null || r[c] === undefined ? '' : r[c])).join(';')));
+    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'lexique_' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click();
+    showStatus(all.length + ' terme(s) exportés', 'success');
+  } catch (err) { showStatus('Erreur export : ' + err.message, 'error'); }
 }
 async function loadLexiqueTermes() {
   const area = document.getElementById('lexTermesArea');
@@ -1156,11 +1290,13 @@ async function loadLexiqueTermes() {
       rpc('admin_count_lexique', { p_search: lexiqueState.search || null, p_categorie: lexiqueState.categorie || null, p_statut: lexiqueState.statut || null })
     ]);
     lexiqueState.rows = rows; lexiqueState.total = total;
-    let h = '<table class="matrix"><thead><tr><th class="name-col">Terme</th><th>Normalisé</th><th>Catégorie</th><th>Statut</th><th>Actions</th></tr></thead><tbody>';
+    let h = '<table class="matrix"><thead><tr><th><input type="checkbox" id="lexSelectAll"></th><th class="name-col">Terme</th><th>Normalisé</th><th>Catégorie</th><th>Statut</th><th>Actions</th></tr></thead><tbody>';
     rows.forEach(r => {
       const isPropose = r.statut && r.statut !== 'valide';
       const statutStyle = isPropose ? ' style="color:#c47e3e;font-weight:600"' : '';
+      const checked = lexiqueState.selected.has(r.id) ? ' checked' : '';
       h += '<tr>'
+        + '<td><input type="checkbox" class="lexCheck" data-id="' + escapeHtml(r.id) + '"' + checked + '></td>'
         + '<td class="name-cell">' + escapeHtml(r.terme) + '</td>'
         + '<td style="font-size:11px">' + escapeHtml(r.terme_normalise) + '</td>'
         + '<td style="font-size:11px">' + escapeHtml(r.categorie || '—') + '</td>'
@@ -1182,6 +1318,21 @@ async function loadLexiqueTermes() {
     area.querySelectorAll('button[data-edit-lex]').forEach(b => b.onclick = () => onEditLexique(b.dataset.editLex));
     area.querySelectorAll('button[data-del-lex]').forEach(b => b.onclick = () => onDeleteLexique(b.dataset.delLex));
     area.querySelectorAll('button[data-approve-lex]').forEach(b => b.onclick = () => onApproveLexique(b.dataset.approveLex));
+    area.querySelectorAll('input.lexCheck').forEach(cb => {
+      cb.onchange = e => {
+        const id = e.target.dataset.id;
+        if (e.target.checked) lexiqueState.selected.add(id);
+        else lexiqueState.selected.delete(id);
+        updateLexBulkBtns();
+      };
+    });
+    const selAll = document.getElementById('lexSelectAll');
+    if (selAll) selAll.onchange = e => {
+      rows.forEach(r => { if (e.target.checked) lexiqueState.selected.add(r.id); else lexiqueState.selected.delete(r.id); });
+      area.querySelectorAll('input.lexCheck').forEach(cb => { cb.checked = e.target.checked; });
+      updateLexBulkBtns();
+    };
+    updateLexBulkBtns();
     area.querySelectorAll('button[data-defs]').forEach(b => b.onclick = () => { lexiqueState.definitionsLexiqueId = b.dataset.defs; lexiqueState.subtab = 'definitions'; renderLexique(); });
     const prev = document.getElementById('lexPrev'); if (prev) prev.onclick = () => { lexiqueState.page--; loadLexiqueTermes(); };
     const next = document.getElementById('lexNext'); if (next) next.onclick = () => { lexiqueState.page++; loadLexiqueTermes(); };
