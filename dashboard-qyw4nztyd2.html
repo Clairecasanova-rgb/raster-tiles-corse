@@ -96,6 +96,14 @@
   .audit-row.fail { background: #fff4f4; }
   .audit-row.success { background: #f4faf4; }
   iframe.carte-preview { width: 100%; height: 600px; border: 1px solid #e5ddd0; border-radius: 4px; }
+
+  /* Multi-filter (chips) */
+  .multi-filter { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px 4px; border: 1px solid #e5ddd0; border-radius: 4px; background: #fff; min-height: 28px; max-width: 320px; }
+  .multi-filter .chip { display: inline-flex; align-items: center; gap: 4px; background: #f4ebd9; color: #5a3a1a; padding: 2px 4px 2px 8px; border-radius: 12px; font-size: 11px; line-height: 1.4; }
+  .multi-filter .chip-x { cursor: pointer; padding: 0 4px; color: #8b4513; font-weight: bold; }
+  .multi-filter .chip-x:hover { color: #c0392b; }
+  .multi-filter select { border: none; background: transparent; font-size: 11px; padding: 2px 4px; color: #8b7355; min-width: 110px; cursor: pointer; outline: none; }
+  .multi-filter select:focus { color: #5a3a1a; }
 </style>
 </head>
 <body>
@@ -1103,7 +1111,45 @@ async function onDeleteCarte(id) {
 }
 
 // ===== TAB: Points (custom_features) =====
-let pointsState = { projetFilter: '', category: '', auteur: '', hasPhoto: '', dateFrom: '', dateTo: '', page: 0, pageSize: 25, total: 0, rows: [], selected: new Set(), distinctCateg: [], distinctAuteurs: [] };
+let pointsState = { projetFilters: [], categoryFilters: [], auteurFilters: [], hasPhoto: '', dateFrom: '', dateTo: '', page: 0, pageSize: 25, total: 0, rows: [], selected: new Set(), distinctCateg: [], distinctAuteurs: [] };
+
+// Widget multi-tag : restitue les chips selectionnees + un <select> "+ ajouter"
+// items: [{value, label, count?}]  selected: tableau de valeurs deja choisies
+// L'appelant attache l'evenement: cb(newSelectedArray)
+function renderMultiFilter(elId, label, items, selected, onChange) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const selSet = new Set(selected.map(String));
+  let h = '';
+  selected.forEach(v => {
+    const it = items.find(x => String(x.value) === String(v));
+    const lbl = it ? it.label : String(v);
+    h += '<span class="chip" data-v="' + escapeHtml(String(v)) + '">'
+      + escapeHtml(lbl)
+      + '<span class="chip-x" title="Retirer">×</span></span>';
+  });
+  const remaining = items.filter(x => !selSet.has(String(x.value)));
+  h += '<select data-add="1"><option value="">+ ' + escapeHtml(label) + '</option>';
+  remaining.forEach(x => {
+    h += '<option value="' + escapeHtml(String(x.value)) + '">'
+      + escapeHtml(x.label) + (x.count != null ? ' (' + x.count + ')' : '') + '</option>';
+  });
+  h += '</select>';
+  el.innerHTML = h;
+  el.querySelectorAll('.chip-x').forEach(x => {
+    x.onclick = () => {
+      const v = x.parentElement.dataset.v;
+      const next = selected.filter(s => String(s) !== String(v));
+      onChange(next);
+    };
+  });
+  const sel = el.querySelector('select[data-add]');
+  if (sel) sel.onchange = e => {
+    const v = e.target.value;
+    if (!v) return;
+    onChange(selected.concat([v]));
+  };
+}
 
 async function renderPoints() {
   const el = document.getElementById('tab-points');
@@ -1113,18 +1159,12 @@ async function renderPoints() {
   if (pointsState.distinctAuteurs.length === 0) {
     try { pointsState.distinctAuteurs = await rpc('admin_distinct_auteurs', {}); } catch(e){}
   }
-  let projOpts = '<option value="">Tous projets</option>';
-  projets.forEach(p => { projOpts += '<option value="' + p.id + '"' + (pointsState.projetFilter == p.id ? ' selected' : '') + '>' + escapeHtml(p.nom) + '</option>'; });
-  let catOpts = '<option value="">Toutes catégories</option>';
-  pointsState.distinctCateg.forEach(c => { catOpts += '<option value="' + escapeHtml(c.category) + '"' + (pointsState.category === c.category ? ' selected' : '') + '>' + escapeHtml(c.category) + ' (' + c.nb + ')</option>'; });
-  let autOpts = '<option value="">Tous auteurs</option>';
-  pointsState.distinctAuteurs.forEach(a => { autOpts += '<option value="' + escapeHtml(a.auteur) + '"' + (pointsState.auteur === a.auteur ? ' selected' : '') + '>' + escapeHtml(a.auteur) + ' (' + a.nb + ')</option>'; });
 
   let h = '<div class="block"><h2>Modération points (custom_features)</h2>';
   h += '<div class="toolbar">';
-  h += '<select id="pFilterProj">' + projOpts + '</select>';
-  h += '<select id="pFilterCat">' + catOpts + '</select>';
-  h += '<select id="pFilterAut">' + autOpts + '</select>';
+  h += '<div class="multi-filter" id="pFilterProj"></div>';
+  h += '<div class="multi-filter" id="pFilterCat"></div>';
+  h += '<div class="multi-filter" id="pFilterAut"></div>';
   h += '<select id="pFilterPhoto"><option value="">Photo ?</option>'
     + '<option value="true"' + (pointsState.hasPhoto === 'true' ? ' selected' : '') + '>Avec photo</option>'
     + '<option value="false"' + (pointsState.hasPhoto === 'false' ? ' selected' : '') + '>Sans photo</option></select>';
@@ -1143,9 +1183,7 @@ async function renderPoints() {
   h += '<button class="btn btn-danger btn-mini" id="pBulkDelete" disabled>Supprimer la sélection</button>';
   h += '</div><div id="pointsTableArea"><div class="loader">Chargement…</div></div></div>';
   el.innerHTML = h;
-  document.getElementById('pFilterProj').onchange = e => { pointsState.projetFilter = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
-  document.getElementById('pFilterCat').onchange = e => { pointsState.category = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
-  document.getElementById('pFilterAut').onchange = e => { pointsState.auteur = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
+  refreshPointsFilters();
   document.getElementById('pFilterPhoto').onchange = e => { pointsState.hasPhoto = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
   document.getElementById('pDateFrom').onchange = e => { pointsState.dateFrom = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
   document.getElementById('pDateTo').onchange = e => { pointsState.dateTo = e.target.value; pointsState.page = 0; pointsState.selected.clear(); loadPointsPage(); };
@@ -1161,23 +1199,48 @@ async function renderPoints() {
   await loadPointsPage();
 }
 
+function refreshPointsFilters() {
+  const projItems = projets.map(p => ({ value: p.id, label: p.nom }));
+  const catItems  = pointsState.distinctCateg.map(c => ({ value: c.category, label: c.category, count: c.nb }));
+  const autItems  = pointsState.distinctAuteurs.map(a => ({ value: a.auteur, label: a.auteur, count: a.nb }));
+  renderMultiFilter('pFilterProj', 'projet…', projItems, pointsState.projetFilters, next => {
+    pointsState.projetFilters = next.map(v => parseInt(v)).filter(v => !isNaN(v));
+    pointsState.page = 0; pointsState.selected.clear();
+    refreshPointsFilters(); loadPointsPage();
+  });
+  renderMultiFilter('pFilterCat', 'catégorie…', catItems, pointsState.categoryFilters, next => {
+    pointsState.categoryFilters = next.slice();
+    pointsState.page = 0; pointsState.selected.clear();
+    refreshPointsFilters(); loadPointsPage();
+  });
+  renderMultiFilter('pFilterAut', 'auteur…', autItems, pointsState.auteurFilters, next => {
+    pointsState.auteurFilters = next.slice();
+    pointsState.page = 0; pointsState.selected.clear();
+    refreshPointsFilters(); loadPointsPage();
+  });
+}
+
+function buildPointsFilterParams() {
+  return {
+    p_projet_ids: pointsState.projetFilters.length ? pointsState.projetFilters : null,
+    p_categories: pointsState.categoryFilters.length ? pointsState.categoryFilters : null,
+    p_auteurs:    pointsState.auteurFilters.length   ? pointsState.auteurFilters   : null,
+    p_has_photo:  pointsState.hasPhoto === '' ? null : (pointsState.hasPhoto === 'true'),
+    p_date_from:  pointsState.dateFrom || null,
+    p_date_to:    pointsState.dateTo ? pointsState.dateTo + 'T23:59:59' : null
+  };
+}
+
 async function loadPointsPage() {
   const area = document.getElementById('pointsTableArea');
   if (!area) return;
   area.innerHTML = '<div class="loader">Chargement…</div>';
-  const params = {
-    p_projet_id: pointsState.projetFilter ? parseInt(pointsState.projetFilter) : null,
-    p_category: pointsState.category || null,
-    p_auteur: pointsState.auteur || null,
-    p_has_photo: pointsState.hasPhoto === '' ? null : (pointsState.hasPhoto === 'true'),
-    p_date_from: pointsState.dateFrom || null,
-    p_date_to: pointsState.dateTo ? pointsState.dateTo + 'T23:59:59' : null,
-    p_limit: pointsState.pageSize, p_offset: pointsState.page * pointsState.pageSize
-  };
+  const base = buildPointsFilterParams();
+  const params = Object.assign({}, base, { p_limit: pointsState.pageSize, p_offset: pointsState.page * pointsState.pageSize });
   try {
     const [rows, total] = await Promise.all([
       rpc('admin_list_features_filtered', params),
-      rpc('admin_count_features_filtered', { p_projet_id: params.p_projet_id, p_category: params.p_category, p_auteur: params.p_auteur, p_has_photo: params.p_has_photo, p_date_from: params.p_date_from, p_date_to: params.p_date_to })
+      rpc('admin_count_features_filtered', base)
     ]);
     pointsState.rows = rows; pointsState.total = total;
     renderPointsTable();
@@ -1257,14 +1320,7 @@ async function onSelectAllInFilter() {
     const all = [];
     let offset = 0;
     while (true) {
-      const params = {
-        p_projet_id: pointsState.projetFilter ? parseInt(pointsState.projetFilter) : null,
-        p_category: pointsState.category || null, p_auteur: pointsState.auteur || null,
-        p_has_photo: pointsState.hasPhoto === '' ? null : (pointsState.hasPhoto === 'true'),
-        p_date_from: pointsState.dateFrom || null,
-        p_date_to: pointsState.dateTo ? pointsState.dateTo + 'T23:59:59' : null,
-        p_limit: 1000, p_offset: offset
-      };
+      const params = Object.assign({}, buildPointsFilterParams(), { p_limit: 1000, p_offset: offset });
       const rows = await rpc('admin_list_features_filtered', params);
       if (rows.length === 0) break;
       rows.forEach(r => all.push(r.id));
@@ -1330,14 +1386,7 @@ async function exportPoints(format) {
     const all = [];
     let offset = 0;
     while (true) {
-      const params = {
-        p_projet_id: pointsState.projetFilter ? parseInt(pointsState.projetFilter) : null,
-        p_category: pointsState.category || null, p_auteur: pointsState.auteur || null,
-        p_has_photo: pointsState.hasPhoto === '' ? null : (pointsState.hasPhoto === 'true'),
-        p_date_from: pointsState.dateFrom || null,
-        p_date_to: pointsState.dateTo ? pointsState.dateTo + 'T23:59:59' : null,
-        p_limit: 1000, p_offset: offset
-      };
+      const params = Object.assign({}, buildPointsFilterParams(), { p_limit: 1000, p_offset: offset });
       const rows = await rpc('admin_list_features_filtered', params);
       if (rows.length === 0) break;
       all.push(...rows); offset += 1000;
