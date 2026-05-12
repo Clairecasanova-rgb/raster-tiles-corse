@@ -1504,9 +1504,39 @@ async function exportPoints(format) {
   } catch (err) { showStatus('Erreur export : ' + err.message, 'error'); }
 }
 
-// Export ZIP complet : geojson + csv + json + dossier photos/
+// Modale options pre-export. Resolve avec {includePhotos, includeCartes} ou null si annule.
+function showExportOptionsModal() {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    const modal = document.createElement('div');
+    modal.style.cssText = 'background:white;border-radius:8px;padding:20px;max-width:460px;width:92%;';
+    modal.innerHTML = '<h2 style="color:#5a3a1a;margin:0 0 14px">Options export complet</h2>'
+      + '<label style="display:block;margin:8px 0;font-size:13px"><input type="checkbox" id="optPhotos" checked> Inclure les photos (téléchargées dans <code>photos/</code>)</label>'
+      + '<label style="display:block;margin:8px 0;font-size:13px"><input type="checkbox" id="optCartes"> Inclure les cartes HTML associées aux projets des points</label>'
+      + '<div style="font-size:11px;color:#888;margin:2px 0 10px 24px">Les cartes HTML peuvent peser 5–20 Mo chacune. Le ZIP final peut faire plusieurs dizaines de Mo.</div>'
+      + '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'
+      + '<button class="btn btn-secondary btn-mini" id="optCancel">Annuler</button>'
+      + '<button class="btn btn-mini" id="optOK">Exporter</button>'
+      + '</div>';
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    const close = r => { document.body.removeChild(overlay); resolve(r); };
+    document.getElementById('optCancel').onclick = () => close(null);
+    document.getElementById('optOK').onclick = () => close({
+      includePhotos: document.getElementById('optPhotos').checked,
+      includeCartes: document.getElementById('optCartes').checked
+    });
+  });
+}
+
+// Export ZIP complet : geojson + csv + json + dossier photos/ + dossier cartes/
 async function exportPointsFull() {
   if (typeof JSZip === 'undefined') { showStatus('JSZip non chargé', 'error'); return; }
+
+  const opts = await showExportOptionsModal();
+  if (!opts) return;
+
   let all;
   try {
     showStatus('Récupération des points…', 'success');
@@ -1516,8 +1546,26 @@ async function exportPointsFull() {
 
   // Estimation photos
   let photoCount = 0;
-  all.forEach(r => { if (r.photo_url) photoCount++; if (r.photo_url2) photoCount++; });
-  if (photoCount > 50 && !confirm(all.length + ' point(s), ' + photoCount + ' photo(s) à télécharger. Continuer ?')) return;
+  if (opts.includePhotos) all.forEach(r => { if (r.photo_url) photoCount++; if (r.photo_url2) photoCount++; });
+
+  // Determiner les cartes a inclure (unique carte_ids associes aux projets des points)
+  let cartesToInclude = [];
+  if (opts.includeCartes) {
+    const projIds = new Set(all.map(r => r.projet_id));
+    const carteIdsSet = new Set();
+    projIds.forEach(pid => {
+      cartes.forEach(c => {
+        if (associations.has(c.id + '-' + pid) && c.url_github) carteIdsSet.add(c.id);
+      });
+    });
+    cartesToInclude = cartes.filter(c => carteIdsSet.has(c.id));
+  }
+
+  // Confirmation si gros volume
+  let warn = '';
+  if (photoCount > 50) warn += photoCount + ' photo(s)\n';
+  if (cartesToInclude.length > 3) warn += cartesToInclude.length + ' carte(s) HTML (~5–20 Mo chacune)\n';
+  if (warn && !confirm(all.length + ' point(s) à exporter avec :\n' + warn + '\nContinuer ?')) return;
 
   // Status persistant
   const stat = document.createElement('div');
@@ -1533,7 +1581,7 @@ async function exportPointsFull() {
 
   try {
     const zip = new JSZip();
-    const photosFolder = zip.folder('photos');
+    const photosFolder = opts.includePhotos ? zip.folder('photos') : null;
 
     // 1. Préparer GeoJSON + CSV + JSON avec photos relatives
     const features = [];
@@ -1541,34 +1589,35 @@ async function exportPointsFull() {
     const cols = ['id', 'projet_id', 'name', 'category', 'feature_type', 'latitude', 'longitude', 'auteur', 'created_at', 'description', 'color', 'photo_url', 'photo_url2', 'photo_file_1', 'photo_file_2'];
     const csvRows = [cols.join(';')];
 
-    let photoIdx = 0;
     let photosDownloaded = 0;
     let photosFailed = 0;
 
     for (let i = 0; i < all.length; i++) {
       const r = all[i];
-      setProgress(Math.round(((i + 1) / all.length) * 50), 'Préparation ' + (i + 1) + '/' + all.length);
+      // Reserve 0-45% pour la preparation/photos
+      setProgress(Math.round(((i + 1) / all.length) * 45), 'Préparation ' + (i + 1) + '/' + all.length);
 
       const [lat, lon] = pointGeomToLatLon(r.geometry);
       const photoFiles = { photo_file_1: '', photo_file_2: '' };
-      const photoUrls = [r.photo_url, r.photo_url2];
-      for (let k = 0; k < photoUrls.length; k++) {
-        if (!photoUrls[k]) continue;
-        photoIdx++;
-        // Determiner l'extension depuis l'URL (par defaut jpg)
-        let ext = 'jpg';
-        const m = photoUrls[k].match(/\.([a-z0-9]{3,4})(\?|$)/i);
-        if (m) ext = m[1].toLowerCase();
-        const fname = 'photo_' + r.id + '_' + (k + 1) + '.' + ext;
-        photoFiles['photo_file_' + (k + 1)] = 'photos/' + fname;
-        try {
-          const resp = await fetch(photoUrls[k]);
-          if (resp.ok) {
-            const blob = await resp.blob();
-            photosFolder.file(fname, blob);
-            photosDownloaded++;
-          } else { photosFailed++; }
-        } catch (e) { photosFailed++; console.warn('photo échec', photoUrls[k], e); }
+
+      if (opts.includePhotos) {
+        const photoUrls = [r.photo_url, r.photo_url2];
+        for (let k = 0; k < photoUrls.length; k++) {
+          if (!photoUrls[k]) continue;
+          let ext = 'jpg';
+          const m = photoUrls[k].match(/\.([a-z0-9]{3,4})(\?|$)/i);
+          if (m) ext = m[1].toLowerCase();
+          const fname = 'photo_' + r.id + '_' + (k + 1) + '.' + ext;
+          photoFiles['photo_file_' + (k + 1)] = 'photos/' + fname;
+          try {
+            const resp = await fetch(photoUrls[k]);
+            if (resp.ok) {
+              const blob = await resp.blob();
+              photosFolder.file(fname, blob);
+              photosDownloaded++;
+            } else { photosFailed++; }
+          } catch (e) { photosFailed++; console.warn('photo échec', photoUrls[k], e); }
+        }
       }
 
       const props = {
@@ -1589,7 +1638,35 @@ async function exportPointsFull() {
       jsonElements.push(Object.assign({}, props, { geometry: r.geometry }));
     }
 
-    setProgress(60, 'Assemblage du ZIP…');
+    // 2. Telechargement des cartes HTML associees (optionnel)
+    let cartesDownloaded = 0;
+    let cartesFailed = 0;
+    const cartesIndex = [];  // pour points.json
+    if (opts.includeCartes && cartesToInclude.length > 0) {
+      const cartesFolder = zip.folder('cartes');
+      for (let i = 0; i < cartesToInclude.length; i++) {
+        const c = cartesToInclude[i];
+        setProgress(45 + Math.round(((i + 1) / cartesToInclude.length) * 30), 'Carte ' + (i + 1) + '/' + cartesToInclude.length + ' : ' + (c.nom || ''));
+        // Nom de fichier depuis l'URL
+        let fname = (c.url_github.split('/').pop() || ('carte_' + c.id + '.html')).split('?')[0];
+        if (!fname.endsWith('.html')) fname += '.html';
+        try {
+          const resp = await fetch(c.url_github);
+          if (resp.ok) {
+            const html = await resp.text();
+            cartesFolder.file(fname, html);
+            cartesDownloaded++;
+            cartesIndex.push({ id: c.id, nom: c.nom, url: c.url_github, file: 'cartes/' + fname });
+          } else { cartesFailed++; cartesIndex.push({ id: c.id, nom: c.nom, url: c.url_github, error: 'HTTP ' + resp.status }); }
+        } catch (e) {
+          cartesFailed++;
+          cartesIndex.push({ id: c.id, nom: c.nom, url: c.url_github, error: e.message });
+          console.warn('carte échec', c.url_github, e);
+        }
+      }
+    }
+
+    setProgress(78, 'Assemblage du ZIP…');
     zip.file('points.geojson', JSON.stringify({ type: 'FeatureCollection', features: features }, null, 2));
     zip.file('points.csv', '﻿' + csvRows.join('\n'));
     zip.file('points.json', JSON.stringify({
@@ -1598,10 +1675,13 @@ async function exportPointsFull() {
       total: jsonElements.length,
       photos_downloaded: photosDownloaded,
       photos_failed: photosFailed,
+      cartes_downloaded: cartesDownloaded,
+      cartes_failed: cartesFailed,
+      cartes: cartesIndex,
       elements: jsonElements
     }, null, 2));
 
-    setProgress(80, 'Compression…');
+    setProgress(85, 'Compression…');
     const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
     setProgress(100, 'Téléchargement…');
 
@@ -1611,8 +1691,15 @@ async function exportPointsFull() {
     a.click();
     URL.revokeObjectURL(a.href);
 
-    let msg = all.length + ' point(s) exportés · ' + photosDownloaded + ' photo(s)';
-    if (photosFailed > 0) msg += ' (' + photosFailed + ' échouée(s))';
+    let msg = all.length + ' point(s) exportés';
+    if (opts.includePhotos) {
+      msg += ' · ' + photosDownloaded + ' photo(s)';
+      if (photosFailed > 0) msg += ' (' + photosFailed + ' échouée(s))';
+    }
+    if (opts.includeCartes) {
+      msg += ' · ' + cartesDownloaded + ' carte(s)';
+      if (cartesFailed > 0) msg += ' (' + cartesFailed + ' échouée(s))';
+    }
     showStatus(msg, 'success');
   } catch (err) {
     showStatus('Erreur export complet : ' + err.message, 'error');
