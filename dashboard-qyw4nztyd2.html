@@ -663,6 +663,7 @@ async function renderCartes() {
         + '<td class="actions">'
         + '<button class="btn btn-mini btn-secondary" data-preview-carte="' + c.id + '">Aperçu</button> '
         + '<button class="btn btn-mini btn-secondary" data-defaults-carte="' + c.id + '">⚙ Défauts</button> '
+        + '<button class="btn btn-mini btn-secondary" data-rasters-carte="' + c.id + '">🗺 Rasters</button> '
         + '<button class="btn btn-mini btn-secondary" data-rename-carte="' + c.id + '">Renommer</button> '
         + '<button class="btn btn-mini btn-danger" data-delete-carte="' + c.id + '">Supprimer</button>'
         + '</td></tr>';
@@ -681,6 +682,150 @@ async function renderCartes() {
   el.querySelectorAll('button[data-delete-carte]').forEach(b => b.onclick = () => onDeleteCarte(parseInt(b.dataset.deleteCarte)));
   el.querySelectorAll('button[data-preview-carte]').forEach(b => b.onclick = () => { cartePreviewId = parseInt(b.dataset.previewCarte); renderCartes(); });
   el.querySelectorAll('button[data-defaults-carte]').forEach(b => b.onclick = () => onConfigCarteDefaults(parseInt(b.dataset.defaultsCarte)));
+  el.querySelectorAll('button[data-rasters-carte]').forEach(b => b.onclick = () => onConfigCarteRasters(parseInt(b.dataset.rastersCarte)));
+}
+
+// === Modal "Rasters liés à cette carte" ===
+let _githubFoldersCache = null;
+async function fetchGithubFolders() {
+  if (_githubFoldersCache) return _githubFoldersCache;
+  try {
+    const r = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/`);
+    if (!r.ok) throw new Error('GitHub ' + r.status);
+    const items = await r.json();
+    _githubFoldersCache = items.filter(i => i.type === 'dir').map(i => i.name).sort();
+    return _githubFoldersCache;
+  } catch(e) { console.warn('fetchGithubFolders:', e); return []; }
+}
+
+async function onConfigCarteRasters(carteId) {
+  const c = cartes.find(x => x.id === carteId); if (!c) return;
+  showStatus('Chargement…', 'success');
+  const [linked, available] = await Promise.all([
+    rpc('admin_list_carte_rasters', { p_carte_id: carteId }).catch(() => []),
+    fetchGithubFolders()
+  ]);
+  const linkedSet = new Set(linked.map(l => l.raster_folder));
+
+  // Modal
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  const modal = document.createElement('div');
+  modal.style.cssText = 'background:white;border-radius:8px;padding:20px;max-width:760px;width:95%;max-height:85vh;overflow-y:auto;';
+  let h = '<h2 style="color:#5a3a1a;margin:0 0 12px">🗺 Rasters liés : ' + escapeHtml(c.nom) + '</h2>';
+  h += '<div style="font-size:11px;color:#888;margin-bottom:10px">Les rasters ajoutés ici apparaîtront en surcouche sur la carte (au prochain chargement). La carte doit être <b>régénérée au moins une fois après le patch JS</b> pour que le fetch dynamique fonctionne.</div>';
+
+  // Section 1 : rasters déjà liés
+  h += '<h3 style="color:#5a3a1a;margin:14px 0 6px">Rasters liés (' + linked.length + ')</h3>';
+  if (linked.length === 0) {
+    h += '<div style="font-size:12px;color:#888;padding:8px">Aucun raster lié à cette carte.</div>';
+  } else {
+    h += '<table class="matrix"><thead><tr><th class="name-col">Dossier</th><th>Affiché</th><th>Blend</th><th>Opacité</th><th>Visible</th><th>Ordre</th><th>Action</th></tr></thead><tbody>';
+    linked.forEach(l => {
+      h += '<tr><td class="name-cell">' + escapeHtml(l.raster_folder) + '</td>'
+        + '<td style="font-size:11px">' + escapeHtml(l.nom_affiche || l.raster_folder) + '</td>'
+        + '<td style="font-size:11px">' + escapeHtml(l.blend_mode) + '</td>'
+        + '<td style="font-size:11px">' + (l.opacity != null ? parseFloat(l.opacity).toFixed(2) : '1.00') + '</td>'
+        + '<td>' + (l.visible_default ? '✓' : '✗') + '</td>'
+        + '<td style="font-size:11px">' + (l.ordre || 100) + '</td>'
+        + '<td class="actions">'
+        + '<button class="btn btn-mini btn-secondary" data-edit-link="' + l.id + '">✎</button> '
+        + '<button class="btn btn-mini btn-danger" data-unlink="' + l.id + '">×</button>'
+        + '</td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+
+  // Section 2 : ajouter un nouveau raster
+  h += '<h3 style="color:#5a3a1a;margin:18px 0 6px">+ Ajouter un raster</h3>';
+  const availOpts = available.filter(f => !linkedSet.has(f)).map(f => '<option value="' + escapeHtml(f) + '">' + escapeHtml(f) + '</option>').join('');
+  if (!availOpts) {
+    h += '<div style="font-size:12px;color:#888">Tous les rasters disponibles sont déjà liés.</div>';
+  } else {
+    h += '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;font-size:12px;align-items:center;background:#faf7f2;padding:10px;border-radius:6px;">'
+      + '<label>Raster :</label><select id="newRasterFolder">' + availOpts + '</select>'
+      + '<label>Nom affiché :</label><input type="text" id="newRasterNom" placeholder="(= nom dossier)">'
+      + '<label>Blend mode :</label><select id="newRasterBlend">'
+      +   '<option value="normal">normal</option><option value="multiply">multiply</option>'
+      +   '<option value="darken">darken</option><option value="screen">screen</option>'
+      +   '<option value="overlay">overlay</option></select>'
+      + '<label>Opacité :</label><input type="number" id="newRasterOpacity" min="0" max="1" step="0.1" value="1.0" style="width:80px">'
+      + '<label>Ordre :</label><input type="number" id="newRasterOrdre" value="100" style="width:80px">'
+      + '<label>Visible par défaut :</label><input type="checkbox" id="newRasterVisible" checked>'
+      + '</div>'
+      + '<div style="margin-top:8px"><button class="btn btn-mini" id="newRasterAdd">+ Ajouter à cette carte</button> '
+      + '<button class="btn btn-mini btn-secondary" id="newRasterBulk">+ Ajouter à plusieurs cartes...</button></div>';
+  }
+
+  h += '<div style="margin-top:16px;text-align:right"><button class="btn btn-secondary btn-mini" id="rstClose">Fermer</button></div>';
+
+  modal.innerHTML = h;
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  const close = () => document.body.removeChild(overlay);
+
+  document.getElementById('rstClose').onclick = close;
+
+  document.querySelectorAll('button[data-unlink]').forEach(b => b.onclick = async () => {
+    if (!confirm('Détacher ce raster de la carte ?')) return;
+    try { await rpc('admin_unlink_raster', { p_id: parseInt(b.dataset.unlink) });
+      showStatus('Détaché', 'success'); close(); onConfigCarteRasters(carteId); }
+    catch(err) { showStatus('Erreur : ' + err.message, 'error'); }
+  });
+
+  document.querySelectorAll('button[data-edit-link]').forEach(b => b.onclick = async () => {
+    const l = linked.find(x => x.id == b.dataset.editLink);
+    if (!l) return;
+    const blend = prompt('Blend mode (normal/multiply/darken/screen/overlay) :', l.blend_mode || 'normal'); if (blend === null) return;
+    const op = prompt('Opacité (0-1) :', l.opacity != null ? l.opacity : '1.0'); if (op === null) return;
+    const ordre = prompt('Ordre (z-index) :', l.ordre || 100); if (ordre === null) return;
+    const vis = confirm('Visible par défaut ? OK = oui, Annuler = non');
+    try {
+      await rpc('admin_link_raster_to_carte', {
+        p_carte_id: carteId, p_raster_folder: l.raster_folder,
+        p_nom_affiche: l.nom_affiche, p_blend_mode: blend, p_opacity: parseFloat(op) || 1.0,
+        p_ordre: parseInt(ordre) || 100, p_visible_default: vis
+      });
+      showStatus('Modifié', 'success'); close(); onConfigCarteRasters(carteId);
+    } catch(err) { showStatus('Erreur : ' + err.message, 'error'); }
+  });
+
+  const addBtn = document.getElementById('newRasterAdd');
+  if (addBtn) addBtn.onclick = async () => {
+    const folder = document.getElementById('newRasterFolder').value;
+    const nom = document.getElementById('newRasterNom').value.trim() || null;
+    const blend = document.getElementById('newRasterBlend').value;
+    const op = parseFloat(document.getElementById('newRasterOpacity').value) || 1.0;
+    const ordre = parseInt(document.getElementById('newRasterOrdre').value) || 100;
+    const vis = document.getElementById('newRasterVisible').checked;
+    try {
+      await rpc('admin_link_raster_to_carte', {
+        p_carte_id: carteId, p_raster_folder: folder, p_nom_affiche: nom,
+        p_blend_mode: blend, p_opacity: op, p_ordre: ordre, p_visible_default: vis
+      });
+      showStatus('Raster lié à ' + c.nom, 'success'); close(); onConfigCarteRasters(carteId);
+    } catch(err) { showStatus('Erreur : ' + err.message, 'error'); }
+  };
+
+  const bulkBtn = document.getElementById('newRasterBulk');
+  if (bulkBtn) bulkBtn.onclick = async () => {
+    const folder = document.getElementById('newRasterFolder').value;
+    const blend = document.getElementById('newRasterBlend').value;
+    const op = parseFloat(document.getElementById('newRasterOpacity').value) || 1.0;
+    const vis = document.getElementById('newRasterVisible').checked;
+    const cartesList = cartes.map(c => c.id + ': ' + c.nom).join('\n');
+    const input = prompt('IDs des cartes (séparées par virgule) pour lier "' + folder + '" :\n\n' + cartesList);
+    if (!input) return;
+    const ids = input.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+    if (ids.length === 0) return;
+    try {
+      const n = await rpc('admin_bulk_link_raster', {
+        p_carte_ids: ids, p_raster_folder: folder,
+        p_blend_mode: blend, p_opacity: op, p_visible_default: vis
+      });
+      showStatus(n + ' carte(s) liée(s) au raster', 'success'); close();
+    } catch(err) { showStatus('Erreur : ' + err.message, 'error'); }
+  };
 }
 
 // === Configuration des défauts d'une carte ===
