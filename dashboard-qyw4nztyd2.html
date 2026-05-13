@@ -673,6 +673,7 @@ async function renderCartes() {
         + '<td>' + (url ? '<a href="' + escapeHtml(url) + '" target="_blank" style="font-size:10px;color:#8b4513">→ ouvrir</a>' : '—') + '</td>'
         + '<td class="actions">'
         + '<button class="btn btn-mini btn-secondary" data-preview-carte="' + c.id + '">Aperçu</button> '
+        + (url ? '<button class="btn btn-mini btn-secondary" data-qr-carte="' + c.id + '" title="QR code">QR</button> ' : '')
         + '<button class="btn btn-mini btn-secondary" data-defaults-carte="' + c.id + '">⚙ Défauts</button> '
         + '<button class="btn btn-mini btn-secondary" data-rasters-carte="' + c.id + '">🗺 Rasters</button> '
         + '<button class="btn btn-mini btn-secondary" data-rename-carte="' + c.id + '">Renommer</button> '
@@ -694,8 +695,81 @@ async function renderCartes() {
   el.querySelectorAll('button[data-preview-carte]').forEach(b => b.onclick = () => { cartePreviewId = parseInt(b.dataset.previewCarte); renderCartes(); });
   el.querySelectorAll('button[data-defaults-carte]').forEach(b => b.onclick = () => onConfigCarteDefaults(parseInt(b.dataset.defaultsCarte)));
   el.querySelectorAll('button[data-rasters-carte]').forEach(b => b.onclick = () => onConfigCarteRasters(parseInt(b.dataset.rastersCarte)));
+  el.querySelectorAll('button[data-qr-carte]').forEach(b => b.onclick = () => onShowCarteQr(parseInt(b.dataset.qrCarte)));
   const orphanBtn = document.getElementById('detectOrphans');
   if (orphanBtn) orphanBtn.onclick = onDetectOrphanCartes;
+}
+
+function onShowCarteQr(carteId) {
+  const c = cartes.find(x => x.id === carteId);
+  if (!c || !c.url_github) { showStatus('Cette carte n\'a pas d\'URL', 'error'); return; }
+  if (typeof qrcode === 'undefined') { showStatus('Lib QR non chargée', 'error'); return; }
+
+  // QR large pour la modale
+  let svg = '';
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(c.url_github);
+    qr.make();
+    svg = qr.createSvgTag({ cellSize: 8, margin: 3, scalable: true });
+  } catch (e) { showStatus('QR génération échec : ' + e.message, 'error'); return; }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  const modal = document.createElement('div');
+  modal.style.cssText = 'background:white;border-radius:8px;padding:24px;max-width:420px;width:92%;text-align:center;';
+  modal.innerHTML = '<h2 style="color:#5a3a1a;margin:0 0 12px;font-size:18px">' + escapeHtml(c.nom) + '</h2>'
+    + '<div id="qrBox" style="background:#fff;padding:10px;border:1px solid #e5ddd0;border-radius:6px;display:inline-block;margin-bottom:14px">' + svg + '</div>'
+    + '<div style="font-size:11px;color:#666;word-break:break-all;background:#faf6ee;padding:8px;border-radius:4px;margin-bottom:14px;font-family:Consolas,monospace">'
+    + escapeHtml(c.url_github) + '</div>'
+    + '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">'
+    + '<button class="btn btn-secondary btn-mini" id="qrCopyUrl">Copier l\'URL</button>'
+    + '<button class="btn btn-secondary btn-mini" id="qrDownloadSvg">⬇ SVG</button>'
+    + '<button class="btn btn-secondary btn-mini" id="qrDownloadPng">⬇ PNG</button>'
+    + '<button class="btn btn-mini" id="qrClose">Fermer</button>'
+    + '</div>';
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const close = () => document.body.removeChild(overlay);
+  document.getElementById('qrClose').onclick = close;
+  overlay.onclick = e => { if (e.target === overlay) close(); };
+
+  // Force la taille SVG affichee pour homogeneite
+  const svgEl = modal.querySelector('#qrBox svg');
+  if (svgEl) { svgEl.setAttribute('width', '280'); svgEl.setAttribute('height', '280'); svgEl.style.display = 'block'; }
+
+  document.getElementById('qrCopyUrl').onclick = () => {
+    navigator.clipboard.writeText(c.url_github).then(() => showStatus('URL copiée', 'success')).catch(() => showStatus('Copie échouée', 'error'));
+  };
+  document.getElementById('qrDownloadSvg').onclick = () => {
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'qr-' + (c.nom || ('carte-' + c.id)).replace(/[^a-z0-9-]+/gi, '_') + '.svg';
+    a.click(); URL.revokeObjectURL(a.href);
+  };
+  document.getElementById('qrDownloadPng').onclick = () => {
+    // SVG -> Canvas -> PNG
+    const img = new Image();
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const size = 600;
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, size, size);
+      ctx.drawImage(img, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(pngBlob => {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(pngBlob);
+        a.download = 'qr-' + (c.nom || ('carte-' + c.id)).replace(/[^a-z0-9-]+/gi, '_') + '.png';
+        a.click(); URL.revokeObjectURL(a.href);
+      }, 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); showStatus('Conversion PNG échouée', 'error'); };
+    img.src = url;
+  };
 }
 
 // Scanne les url_github de toutes les cartes, marque celles qui renvoient 404
