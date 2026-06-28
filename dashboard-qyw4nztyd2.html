@@ -375,8 +375,18 @@ async function renderRasters() {
   h += '<div style="margin-top:12px;font-size:11px;color:#888;border-top:1px solid #eee;padding-top:8px">'
     + 'Lecture publique = pas besoin de token. Pour <b>supprimer</b> un raster : Personal Access Token GitHub nécessaire (Settings → Developer settings → PAT classic, scope <code>public_repo</code>). Le token est stocké en localStorage uniquement.'
     + '</div></div>';
+  // ===== Section : rasters liés aux PROJETS (overlays) =====
+  h += '<div class="block"><h2>Rasters par projet</h2>'
+    + '<div style="font-size:12px;color:#5a3a1a;margin-bottom:8px">Couches raster attachées à un projet (visibles sur toute carte montrant ce projet). Mode image (PNG Web-Mercator + bounds).</div>'
+    + '<div class="toolbar">'
+    + '<button class="btn btn-mini btn-secondary" id="prLink">+ Lier une image à un projet</button> '
+    + '<button class="btn btn-mini btn-secondary" id="prRefresh">Actualiser</button>'
+    + '</div><div id="projetRastersArea"><div class="loader">Chargement…</div></div></div>';
   el.innerHTML = h;
   document.getElementById('rRefresh').onclick = () => renderRasters();
+  document.getElementById('prRefresh').onclick = () => renderProjetRasters();
+  document.getElementById('prLink').onclick = () => onLinkProjetRaster();
+  renderProjetRasters();
   document.getElementById('rSetToken').onclick = () => {
     const cur = localStorage.getItem(GITHUB_PAT_KEY) || '';
     const t = prompt('Personal Access Token GitHub (scope public_repo). Vide pour effacer :', cur);
@@ -438,6 +448,71 @@ async function onDeleteRaster(folderName) {
     }
     showStatus(deleted + '/' + allFiles.length + ' fichier(s) supprimé(s)', 'success');
     setTimeout(() => renderRasters(), 1500);
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
+
+// ===== Rasters par projet (table projet_rasters via RPC) =====
+async function renderProjetRasters() {
+  const area = document.getElementById('projetRastersArea');
+  if (!area) return;
+  try {
+    const rows = await rpc('admin_list_projet_rasters', { p_projet_id: null });
+    if (!rows || !rows.length) { area.innerHTML = '<div style="font-size:12px;color:#888">Aucun raster lié à un projet.</div>'; return; }
+    let h = '<table class="matrix"><thead><tr><th>Projet</th><th class="name-col">Nom</th><th>Image</th><th>Opac.</th><th>Visible</th><th>Action</th></tr></thead><tbody>';
+    rows.forEach(r => {
+      const pn = (projets.find(p => p.id == r.projet_id) || {}).nom || ('#' + r.projet_id);
+      const img = r.image_url
+        ? ('<a href="' + escapeHtml(r.image_url) + '" target="_blank">' + escapeHtml(r.image_url.split('/').pop()) + '</a>')
+        : ('tuiles: ' + escapeHtml(r.raster_folder || '—'));
+      h += '<tr>'
+        + '<td>' + escapeHtml(pn) + ' <span style="color:#888;font-size:10px">#' + r.projet_id + '</span></td>'
+        + '<td class="name-cell">' + escapeHtml(r.nom_affiche || '') + '</td>'
+        + '<td style="font-size:11px">' + img + '</td>'
+        + '<td>' + (r.opacity != null ? r.opacity : '—') + '</td>'
+        + '<td>' + (r.visible_default ? 'oui' : 'non') + '</td>'
+        + '<td class="actions"><button class="btn btn-mini btn-danger" data-unlink-pr="' + r.id + '">Retirer</button></td>'
+        + '</tr>';
+    });
+    h += '</tbody></table>';
+    area.innerHTML = h;
+    area.querySelectorAll('button[data-unlink-pr]').forEach(b => b.onclick = () => onUnlinkProjetRaster(b.dataset.unlinkPr));
+  } catch (err) {
+    area.innerHTML = '<div class="loader" style="color:#c00">Erreur : ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+async function onLinkProjetRaster() {
+  const list = projets.map(p => '#' + p.id + ' ' + p.nom).join('\n');
+  const pid = prompt('ID du projet à associer :\n\n' + list);
+  if (pid === null || pid.trim() === '') return;
+  const nom = prompt('Nom affiché de la couche :', 'LiDAR - rendu');
+  if (nom === null) return;
+  const url = prompt('URL de l\'image (PNG Web-Mercator, EPSG:3857) :', 'https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/');
+  if (url === null || !url.trim()) return;
+  const b = prompt('Bounds "sud,ouest,nord,est" (lat,lon WGS84) :', '42.423851,9.410613,42.427726,9.415843');
+  if (b === null) return;
+  const parts = b.split(',').map(x => parseFloat(x.trim()));
+  if (parts.length !== 4 || parts.some(isNaN)) { showStatus('Bounds invalides (4 nombres attendus)', 'error'); return; }
+  const op = prompt('Opacité (0-1) :', '0.85');
+  if (op === null) return;
+  try {
+    await rpc('admin_link_image_to_projet', {
+      p_projet_id: parseInt(pid, 10), p_nom_affiche: nom.trim(),
+      p_image_url: url.trim(), p_bounds_json: [[parts[0], parts[1]], [parts[2], parts[3]]],
+      p_opacity: parseFloat(op) || 0.85, p_blend_mode: 'normal',
+      p_group_name: 'LiDAR Serie A', p_ordre: 100, p_visible_default: true
+    });
+    showStatus('Raster lié au projet', 'success');
+    renderProjetRasters();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
+
+async function onUnlinkProjetRaster(id) {
+  if (!confirm('Retirer ce raster du projet ?')) return;
+  try {
+    await rpc('admin_unlink_projet_raster', { p_id: parseInt(id, 10) });
+    showStatus('Raster retiré', 'success');
+    renderProjetRasters();
   } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 
