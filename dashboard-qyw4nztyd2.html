@@ -377,15 +377,26 @@ async function renderRasters() {
     + '</div></div>';
   // ===== Section : rasters liés aux PROJETS (overlays) =====
   h += '<div class="block"><h2>Rasters par projet</h2>'
-    + '<div style="font-size:12px;color:#5a3a1a;margin-bottom:8px">Couches raster attachées à un projet (visibles sur toute carte montrant ce projet). Mode image (PNG Web-Mercator + bounds).</div>'
-    + '<div class="toolbar">'
-    + '<button class="btn btn-mini btn-secondary" id="prLink">+ Lier une image à un projet</button> '
-    + '<button class="btn btn-mini btn-secondary" id="prRefresh">Actualiser</button>'
-    + '</div><div id="projetRastersArea"><div class="loader">Chargement…</div></div></div>';
+    + '<div style="font-size:12px;color:#5a3a1a;margin-bottom:8px">Couches raster attachées à un projet (visibles sur toute carte montrant ce projet). Choisis un <b>raster</b> et le(s) <b>projet(s)</b> cible(s) : un même raster peut aller sur plusieurs projets, et chaque raster sur le projet de ton choix.</div>'
+    + '<div id="prForm" style="background:#faf7f2;border:1px solid #e5ddd0;border-radius:6px;padding:10px;margin-bottom:10px;font-size:12px">'
+    +   '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">'
+    +     '<label style="display:flex;flex-direction:column;gap:2px">Raster<select id="prRaster" style="min-width:250px;padding:4px"><option value="">Chargement…</option></select></label>'
+    +     '<label style="display:flex;flex-direction:column;gap:2px">Projet(s) <span style="color:#888">(Ctrl/Cmd+clic = plusieurs)</span><select id="prProjet" multiple size="5" style="min-width:210px;padding:4px"></select></label>'
+    +     '<label style="display:flex;flex-direction:column;gap:2px">Nom affiché<input id="prNom" style="min-width:210px;padding:4px"></label>'
+    +     '<label style="display:flex;flex-direction:column;gap:2px">Groupe<input id="prGroupe" value="LiDAR Serie A" style="width:140px;padding:4px"></label>'
+    +     '<label style="display:flex;flex-direction:column;gap:2px">Opacité<input id="prOpa" type="number" min="0" max="1" step="0.05" value="0.85" style="width:70px;padding:4px"></label>'
+    +     '<label style="display:flex;flex-direction:column;gap:2px">Fusion<select id="prBlend" style="padding:4px"><option>normal</option><option>multiply</option><option>screen</option><option>overlay</option><option>darken</option><option>lighten</option></select></label>'
+    +     '<button class="btn btn-mini btn-primary" id="prLink">Lier</button>'
+    +   '</div>'
+    +   '<div id="prFormMsg" style="font-size:11px;color:#888;margin-top:6px"></div>'
+    + '</div>'
+    + '<div class="toolbar"><button class="btn btn-mini btn-secondary" id="prRefresh">Actualiser la liste</button></div>'
+    + '<div id="projetRastersArea"><div class="loader">Chargement…</div></div></div>';
   el.innerHTML = h;
   document.getElementById('rRefresh').onclick = () => renderRasters();
   document.getElementById('prRefresh').onclick = () => renderProjetRasters();
   document.getElementById('prLink').onclick = () => onLinkProjetRaster();
+  populateProjetRasterForm();
   renderProjetRasters();
   document.getElementById('rSetToken').onclick = () => {
     const cur = localStorage.getItem(GITHUB_PAT_KEY) || '';
@@ -481,30 +492,60 @@ async function renderProjetRasters() {
   }
 }
 
-async function onLinkProjetRaster() {
-  const list = projets.map(p => '#' + p.id + ' ' + p.nom).join('\n');
-  const pid = prompt('ID du projet à associer :\n\n' + list);
-  if (pid === null || pid.trim() === '') return;
-  const nom = prompt('Nom affiché de la couche :', 'LiDAR - rendu');
-  if (nom === null) return;
-  const url = prompt('URL de l\'image (PNG Web-Mercator, EPSG:3857) :', 'https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/');
-  if (url === null || !url.trim()) return;
-  const b = prompt('Bounds "sud,ouest,nord,est" (lat,lon WGS84) :', '42.423851,9.410613,42.427726,9.415843');
-  if (b === null) return;
-  const parts = b.split(',').map(x => parseFloat(x.trim()));
-  if (parts.length !== 4 || parts.some(isNaN)) { showStatus('Bounds invalides (4 nombres attendus)', 'error'); return; }
-  const op = prompt('Opacité (0-1) :', '0.85');
-  if (op === null) return;
+// Peuple le formulaire : rasters depuis overlays/index.json, projets depuis `projets`.
+const OVERLAYS_INDEX_URL = 'https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/index.json';
+async function populateProjetRasterForm() {
+  const selP = document.getElementById('prProjet');
+  if (selP) selP.innerHTML = (projets || []).map(p => '<option value="' + p.id + '">#' + p.id + ' ' + escapeHtml(p.nom) + '</option>').join('');
+  const selR = document.getElementById('prRaster');
+  if (!selR) return;
   try {
-    await rpc('admin_link_image_to_projet', {
-      p_projet_id: parseInt(pid, 10), p_nom_affiche: nom.trim(),
-      p_image_url: url.trim(), p_bounds_json: [[parts[0], parts[1]], [parts[2], parts[3]]],
-      p_opacity: parseFloat(op) || 0.85, p_blend_mode: 'normal',
-      p_group_name: 'LiDAR Serie A', p_ordre: 100, p_visible_default: true
-    });
-    showStatus('Raster lié au projet', 'success');
-    renderProjetRasters();
-  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+    const r = await fetch(OVERLAYS_INDEX_URL + '?t=' + Date.now());
+    if (!r.ok) throw new Error('index.json ' + r.status);
+    const idx = await r.json();
+    const ovs = (idx.overlays || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    selR.innerHTML = '<option value="">— choisir un raster —</option>'
+      + ovs.map(o => '<option value="' + escapeHtml(o.url) + '" data-name="' + escapeHtml(o.name)
+        + '" data-bounds="' + escapeHtml(JSON.stringify(o.bounds)) + '">' + escapeHtml(o.name) + '</option>').join('');
+    selR.onchange = () => {
+      const o = selR.options[selR.selectedIndex];
+      const nom = document.getElementById('prNom');
+      if (o && o.dataset && o.dataset.name && nom) nom.value = o.dataset.name;
+    };
+    const msg = document.getElementById('prFormMsg');
+    if (msg) msg.textContent = ovs.length + ' raster(s) disponible(s) (générés depuis la Série A). Pour en ajouter d\'autres, demande-le.';
+  } catch (err) {
+    selR.innerHTML = '<option value="">Erreur index.json</option>';
+    const msg = document.getElementById('prFormMsg');
+    if (msg) msg.textContent = 'Erreur chargement index.json : ' + err.message;
+  }
+}
+
+async function onLinkProjetRaster() {
+  const selR = document.getElementById('prRaster');
+  const o = selR && selR.options[selR.selectedIndex];
+  if (!o || !o.value) { showStatus('Choisis un raster', 'error'); return; }
+  let bounds;
+  try { bounds = JSON.parse(o.dataset.bounds); } catch (e) { showStatus('Bounds invalides', 'error'); return; }
+  const nom = (document.getElementById('prNom').value || o.dataset.name || '').trim();
+  const groupe = (document.getElementById('prGroupe').value || 'LiDAR Serie A').trim();
+  const op = parseFloat(document.getElementById('prOpa').value) || 0.85;
+  const blend = document.getElementById('prBlend').value || 'normal';
+  const pids = Array.from(document.getElementById('prProjet').selectedOptions).map(x => parseInt(x.value, 10));
+  if (!pids.length) { showStatus('Choisis au moins un projet (Ctrl+clic pour plusieurs)', 'error'); return; }
+  let ok = 0;
+  for (const pid of pids) {
+    try {
+      await rpc('admin_link_image_to_projet', {
+        p_projet_id: pid, p_nom_affiche: nom, p_image_url: o.value,
+        p_bounds_json: bounds, p_opacity: op, p_blend_mode: blend,
+        p_group_name: groupe, p_ordre: 100, p_visible_default: true
+      });
+      ok++;
+    } catch (err) { showStatus('Erreur projet #' + pid + ' : ' + err.message, 'error'); }
+  }
+  if (ok) showStatus(ok + ' liaison(s) créée(s)', 'success');
+  renderProjetRasters();
 }
 
 async function onUnlinkProjetRaster(id) {
