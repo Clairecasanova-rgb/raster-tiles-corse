@@ -1,6 +1,6 @@
 {
   "base_url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/",
-  "count": 20,
+  "count": 22,
   "overlays": [
     {
       "file": "lumito-A05-ombrage-multi.png",
@@ -351,6 +351,42 @@
       "site": "cocovello",
       "label": "Cocovello MNS",
       "code": "C03",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-MNS-C06-ndsm.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-MNS-C06-ndsm.png",
+      "name": "LiDAR Cocovello MNS - C06 nDSM (hauteur sursol)",
+      "site": "cocovello",
+      "label": "Cocovello MNS",
+      "code": "C06",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-MNS-RVT-confiance.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-MNS-RVT-confiance.png",
+      "name": "LiDAR Cocovello MNS - RVT confiance (convexite)",
+      "site": "cocovello",
+      "label": "Cocovello MNS",
+      "code": "RVT",
       "bounds": [
         [
           42.415712982143475,
