@@ -1,6 +1,6 @@
 {
   "base_url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/",
-  "count": 16,
+  "count": 20,
   "overlays": [
     {
       "file": "lumito-A05-ombrage-multi.png",
@@ -279,6 +279,78 @@
       "site": "cocovello",
       "label": "Cocovello",
       "code": "C16",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-MNS-A05-ombrage-multi.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-MNS-A05-ombrage-multi.png",
+      "name": "LiDAR Cocovello MNS - A05 Ombrage multi",
+      "site": "cocovello",
+      "label": "Cocovello MNS",
+      "code": "A05",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-MNS-A09-mnt-couches.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-MNS-A09-mnt-couches.png",
+      "name": "LiDAR Cocovello MNS - A09 MNT par couches",
+      "site": "cocovello",
+      "label": "Cocovello MNS",
+      "code": "A09",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-MNS-C01-rrim.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-MNS-C01-rrim.png",
+      "name": "LiDAR Cocovello MNS - C01 RRIM",
+      "site": "cocovello",
+      "label": "Cocovello MNS",
+      "code": "C01",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-MNS-C03-lrm.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-MNS-C03-lrm.png",
+      "name": "LiDAR Cocovello MNS - C03 LRM sur ombrage",
+      "site": "cocovello",
+      "label": "Cocovello MNS",
+      "code": "C03",
       "bounds": [
         [
           42.415712982143475,
