@@ -1,0 +1,294 @@
+{
+  "base_url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/",
+  "count": 16,
+  "overlays": [
+    {
+      "file": "lumito-A05-ombrage-multi.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/lumito-A05-ombrage-multi.png",
+      "name": "LiDAR Lumito - A05 Ombrage multi-directionnel",
+      "site": "lumito",
+      "label": "Lumito",
+      "code": "A05",
+      "bounds": [
+        [
+          42.42385118637306,
+          9.410613283527637
+        ],
+        [
+          42.42772647454506,
+          9.415843212902505
+        ]
+      ]
+    },
+    {
+      "file": "lumito-A09-mnt-couches.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/lumito-A09-mnt-couches.png",
+      "name": "LiDAR Lumito - A09 MNT par couches",
+      "site": "lumito",
+      "label": "Lumito",
+      "code": "A09",
+      "bounds": [
+        [
+          42.42385118637306,
+          9.410613283527637
+        ],
+        [
+          42.42772647454506,
+          9.415843212902505
+        ]
+      ]
+    },
+    {
+      "file": "lumito-A24-quality-couches.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/lumito-A24-quality-couches.png",
+      "name": "LiDAR Lumito - A24 Quality (MSII) par couches",
+      "site": "lumito",
+      "label": "Lumito",
+      "code": "A24",
+      "bounds": [
+        [
+          42.42385118637306,
+          9.410613283527637
+        ],
+        [
+          42.42772647454506,
+          9.415843212902505
+        ]
+      ]
+    },
+    {
+      "file": "lumito-C01-rrim.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/lumito-C01-rrim.png",
+      "name": "LiDAR Lumito - C01 RRIM",
+      "site": "lumito",
+      "label": "Lumito",
+      "code": "C01",
+      "bounds": [
+        [
+          42.42385118637306,
+          9.410613283527637
+        ],
+        [
+          42.42772647454506,
+          9.415843212902505
+        ]
+      ]
+    },
+    {
+      "file": "lumito-C05-rrim-vo.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/lumito-C05-rrim-vo.png",
+      "name": "LiDAR Lumito - C05 RRIM x VO",
+      "site": "lumito",
+      "label": "Lumito",
+      "code": "C05",
+      "bounds": [
+        [
+          42.42385118637306,
+          9.410613283527637
+        ],
+        [
+          42.42772647454506,
+          9.415843212902505
+        ]
+      ]
+    },
+    {
+      "file": "lumito-C10-local-dominance.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/lumito-C10-local-dominance.png",
+      "name": "LiDAR Lumito - C10 Local Dominance",
+      "site": "lumito",
+      "label": "Lumito",
+      "code": "C10",
+      "bounds": [
+        [
+          42.42385118637306,
+          9.410613283527637
+        ],
+        [
+          42.42772647454506,
+          9.415843212902505
+        ]
+      ]
+    },
+    {
+      "file": "lumito-C13-rrim-sf-couches.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/lumito-C13-rrim-sf-couches.png",
+      "name": "LiDAR Lumito - C13 RRIM x couches SF",
+      "site": "lumito",
+      "label": "Lumito",
+      "code": "C13",
+      "bounds": [
+        [
+          42.42385118637306,
+          9.410613283527637
+        ],
+        [
+          42.42772647454506,
+          9.415843212902505
+        ]
+      ]
+    },
+    {
+      "file": "lumito-C16-composite-krita1.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/lumito-C16-composite-krita1.png",
+      "name": "LiDAR Lumito - C16 Composite Krita 1",
+      "site": "lumito",
+      "label": "Lumito",
+      "code": "C16",
+      "bounds": [
+        [
+          42.42385118637306,
+          9.410613283527637
+        ],
+        [
+          42.42772647454506,
+          9.415843212902505
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-A05-ombrage-multi.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-A05-ombrage-multi.png",
+      "name": "LiDAR Cocovello - A05 Ombrage multi-directionnel",
+      "site": "cocovello",
+      "label": "Cocovello",
+      "code": "A05",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-A09-mnt-couches.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-A09-mnt-couches.png",
+      "name": "LiDAR Cocovello - A09 MNT par couches",
+      "site": "cocovello",
+      "label": "Cocovello",
+      "code": "A09",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-A24-quality-couches.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-A24-quality-couches.png",
+      "name": "LiDAR Cocovello - A24 Quality (MSII) par couches",
+      "site": "cocovello",
+      "label": "Cocovello",
+      "code": "A24",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-C01-rrim.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-C01-rrim.png",
+      "name": "LiDAR Cocovello - C01 RRIM",
+      "site": "cocovello",
+      "label": "Cocovello",
+      "code": "C01",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-C05-rrim-vo.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-C05-rrim-vo.png",
+      "name": "LiDAR Cocovello - C05 RRIM x VO",
+      "site": "cocovello",
+      "label": "Cocovello",
+      "code": "C05",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-C10-local-dominance.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-C10-local-dominance.png",
+      "name": "LiDAR Cocovello - C10 Local Dominance",
+      "site": "cocovello",
+      "label": "Cocovello",
+      "code": "C10",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-C13-rrim-sf-couches.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-C13-rrim-sf-couches.png",
+      "name": "LiDAR Cocovello - C13 RRIM x couches SF",
+      "site": "cocovello",
+      "label": "Cocovello",
+      "code": "C13",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "cocovello-C16-composite-krita1.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/cocovello-C16-composite-krita1.png",
+      "name": "LiDAR Cocovello - C16 Composite Krita 1",
+      "site": "cocovello",
+      "label": "Cocovello",
+      "code": "C16",
+      "bounds": [
+        [
+          42.415712982143475,
+          9.395210292253868
+        ],
+        [
+          42.419588269351664,
+          9.400440147056846
+        ]
+      ]
+    }
+  ]
+}
