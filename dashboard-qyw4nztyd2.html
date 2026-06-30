@@ -469,7 +469,7 @@ async function renderProjetRasters() {
   try {
     const rows = await rpc('admin_list_projet_rasters', { p_projet_id: null });
     if (!rows || !rows.length) { area.innerHTML = '<div style="font-size:12px;color:#888">Aucun raster lié à un projet.</div>'; return; }
-    let h = '<table class="matrix"><thead><tr><th>Projet</th><th class="name-col">Nom</th><th>Image</th><th>Opac.</th><th>Visible</th><th>Action</th></tr></thead><tbody>';
+    let h = '<table class="matrix"><thead><tr><th>Projet</th><th class="name-col">Nom</th><th>Image</th><th>Opac.</th><th>Visible</th><th>Actif</th><th>Action</th></tr></thead><tbody>';
     rows.forEach(r => {
       const pn = (projets.find(p => p.id == r.projet_id) || {}).nom || ('#' + r.projet_id);
       const img = r.image_url
@@ -481,12 +481,14 @@ async function renderProjetRasters() {
         + '<td style="font-size:11px">' + img + '</td>'
         + '<td>' + (r.opacity != null ? r.opacity : '—') + '</td>'
         + '<td>' + (r.visible_default ? 'oui' : 'non') + '</td>'
+        + '<td><button class="btn btn-mini" data-toggle-actif="' + r.id + '" data-cur="' + (r.actif !== false ? 1 : 0) + '" style="background:' + (r.actif !== false ? '#2e7d32' : '#999') + ';color:#fff" title="Actif = chargé sur la carte ; inactif = pas chargé du tout">' + (r.actif !== false ? 'actif' : 'inactif') + '</button></td>'
         + '<td class="actions"><button class="btn btn-mini btn-danger" data-unlink-pr="' + r.id + '">Retirer</button></td>'
         + '</tr>';
     });
     h += '</tbody></table>';
     area.innerHTML = h;
     area.querySelectorAll('button[data-unlink-pr]').forEach(b => b.onclick = () => onUnlinkProjetRaster(b.dataset.unlinkPr));
+    area.querySelectorAll('button[data-toggle-actif]').forEach(b => b.onclick = () => onToggleProjetRasterActif(b.dataset.toggleActif, b.dataset.cur === '1'));
   } catch (err) {
     area.innerHTML = '<div class="loader" style="color:#c00">Erreur : ' + escapeHtml(err.message) + '</div>';
   }
@@ -553,6 +555,17 @@ async function onUnlinkProjetRaster(id) {
   try {
     await rpc('admin_unlink_projet_raster', { p_id: parseInt(id, 10) });
     showStatus('Raster retiré', 'success');
+    renderProjetRasters();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
+}
+
+// Bascule l'interrupteur "actif" (charge / ne charge pas sur la carte) sans
+// supprimer la ligne. Requiert la migration SQL (colonne actif + RPC
+// admin_set_projet_raster_actif).
+async function onToggleProjetRasterActif(id, cur) {
+  try {
+    await rpc('admin_set_projet_raster_actif', { p_id: parseInt(id, 10), p_actif: !cur });
+    showStatus(!cur ? 'Raster activé' : 'Raster désactivé', 'success');
     renderProjetRasters();
   } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
