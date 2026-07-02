@@ -386,6 +386,8 @@ async function renderRasters() {
     +     '<label style="display:flex;flex-direction:column;gap:2px">Groupe<input id="prGroupe" value="LiDAR Serie A" style="width:140px;padding:4px"></label>'
     +     '<label style="display:flex;flex-direction:column;gap:2px">Opacité<input id="prOpa" type="number" min="0" max="1" step="0.05" value="0.85" style="width:70px;padding:4px"></label>'
     +     '<label style="display:flex;flex-direction:column;gap:2px">Fusion<select id="prBlend" style="padding:4px"><option>normal</option><option>multiply</option><option>screen</option><option>overlay</option><option>darken</option><option>lighten</option></select></label>'
+    +     '<label style="display:flex;flex-direction:column;gap:2px" title="Empilement : un ordre plus grand passe au-dessus">Ordre<input id="prOrdre" type="number" step="1" value="100" style="width:70px;padding:4px"></label>'
+    +     '<label style="display:flex;flex-direction:row;align-items:center;gap:5px;padding-bottom:6px" title="Affiché au chargement de la carte"><input id="prVisible" type="checkbox" checked> Visible par défaut</label>'
     +     '<button class="btn btn-mini btn-primary" id="prLink">Lier</button>'
     +   '</div>'
     +   '<div id="prFormMsg" style="font-size:11px;color:#888;margin-top:6px"></div>'
@@ -469,26 +471,40 @@ async function renderProjetRasters() {
   try {
     const rows = await rpc('admin_list_projet_rasters', { p_projet_id: null });
     if (!rows || !rows.length) { area.innerHTML = '<div style="font-size:12px;color:#888">Aucun raster lié à un projet.</div>'; return; }
-    let h = '<table class="matrix"><thead><tr><th>Projet</th><th class="name-col">Nom</th><th>Image</th><th>Opac.</th><th>Visible</th><th>Actif</th><th>Action</th></tr></thead><tbody>';
+    window._prById = {};
+    const BLENDS = ['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten'];
+    let h = '<div style="font-size:11px;color:#888;margin-bottom:4px">Modifie ordre / opacité / fusion / visibilité / groupe puis <b>Enregistrer</b> (durable, visible par tous). Ordre plus grand = au-dessus.</div>';
+    h += '<table class="matrix"><thead><tr><th>Projet</th><th class="name-col">Nom</th><th>Image</th><th>Ordre</th><th>Opac.</th><th>Fusion</th><th>Visible</th><th>Groupe</th><th>Actif</th><th>Action</th></tr></thead><tbody>';
     rows.forEach(r => {
+      window._prById[r.id] = r;
       const pn = (projets.find(p => p.id == r.projet_id) || {}).nom || ('#' + r.projet_id);
+      const editable = !!(r.image_url && r.bounds_json);
       const img = r.image_url
         ? ('<a href="' + escapeHtml(r.image_url) + '" target="_blank">' + escapeHtml(r.image_url.split('/').pop()) + '</a>')
         : ('tuiles: ' + escapeHtml(r.raster_folder || '—'));
-      h += '<tr>'
+      const dis = editable ? '' : ' disabled';
+      const blendOpts = BLENDS.map(b => '<option value="' + b + '"' + ((r.blend_mode || 'normal') === b ? ' selected' : '') + '>' + b + '</option>').join('');
+      h += '<tr data-pr-id="' + r.id + '">'
         + '<td>' + escapeHtml(pn) + ' <span style="color:#888;font-size:10px">#' + r.projet_id + '</span></td>'
         + '<td class="name-cell">' + escapeHtml(r.nom_affiche || '') + '</td>'
         + '<td style="font-size:11px">' + img + '</td>'
-        + '<td>' + (r.opacity != null ? r.opacity : '—') + '</td>'
-        + '<td>' + (r.visible_default ? 'oui' : 'non') + '</td>'
+        + '<td><input class="pr-ordre" type="number" step="1" value="' + (r.ordre != null ? r.ordre : 100) + '" style="width:56px;padding:2px"' + dis + '></td>'
+        + '<td><input class="pr-opa" type="number" min="0" max="1" step="0.05" value="' + (r.opacity != null ? r.opacity : 0.85) + '" style="width:60px;padding:2px"' + dis + '></td>'
+        + '<td><select class="pr-blend" style="padding:2px"' + dis + '>' + blendOpts + '</select></td>'
+        + '<td style="text-align:center"><input class="pr-vis" type="checkbox"' + (r.visible_default !== false ? ' checked' : '') + dis + '></td>'
+        + '<td><input class="pr-grp" value="' + escapeHtml(r.group_name || '') + '" style="width:100px;padding:2px"' + dis + '></td>'
         + '<td><button class="btn btn-mini" data-toggle-actif="' + r.id + '" data-cur="' + (r.actif !== false ? 1 : 0) + '" style="background:' + (r.actif !== false ? '#2e7d32' : '#999') + ';color:#fff" title="Actif = chargé sur la carte ; inactif = pas chargé du tout">' + (r.actif !== false ? 'actif' : 'inactif') + '</button></td>'
-        + '<td class="actions"><button class="btn btn-mini btn-danger" data-unlink-pr="' + r.id + '">Retirer</button></td>'
+        + '<td class="actions">'
+        + (editable ? '<button class="btn btn-mini btn-primary" data-save-pr="' + r.id + '">Enregistrer</button> ' : '<span style="font-size:10px;color:#999" title="Raster en tuiles : édition via SQL">tuiles</span> ')
+        + '<button class="btn btn-mini btn-danger" data-unlink-pr="' + r.id + '">Retirer</button>'
+        + '</td>'
         + '</tr>';
     });
     h += '</tbody></table>';
     area.innerHTML = h;
     area.querySelectorAll('button[data-unlink-pr]').forEach(b => b.onclick = () => onUnlinkProjetRaster(b.dataset.unlinkPr));
     area.querySelectorAll('button[data-toggle-actif]').forEach(b => b.onclick = () => onToggleProjetRasterActif(b.dataset.toggleActif, b.dataset.cur === '1'));
+    area.querySelectorAll('button[data-save-pr]').forEach(b => b.onclick = () => onSaveProjetRaster(b.dataset.savePr));
   } catch (err) {
     area.innerHTML = '<div class="loader" style="color:#c00">Erreur : ' + escapeHtml(err.message) + '</div>';
   }
@@ -533,6 +549,10 @@ async function onLinkProjetRaster() {
   const groupe = (document.getElementById('prGroupe').value || 'LiDAR Serie A').trim();
   const op = parseFloat(document.getElementById('prOpa').value) || 0.85;
   const blend = document.getElementById('prBlend').value || 'normal';
+  const ordreEl = document.getElementById('prOrdre');
+  const ordre = ordreEl && ordreEl.value !== '' ? parseInt(ordreEl.value, 10) : 100;
+  const visEl = document.getElementById('prVisible');
+  const visible = visEl ? visEl.checked : true;
   const pids = Array.from(document.getElementById('prProjet').selectedOptions).map(x => parseInt(x.value, 10));
   if (!pids.length) { showStatus('Choisis au moins un projet (Ctrl+clic pour plusieurs)', 'error'); return; }
   let ok = 0;
@@ -541,13 +561,41 @@ async function onLinkProjetRaster() {
       await rpc('admin_link_image_to_projet', {
         p_projet_id: pid, p_nom_affiche: nom, p_image_url: o.value,
         p_bounds_json: bounds, p_opacity: op, p_blend_mode: blend,
-        p_group_name: groupe, p_ordre: 100, p_visible_default: true
+        p_group_name: groupe, p_ordre: isNaN(ordre) ? 100 : ordre, p_visible_default: visible
       });
       ok++;
     } catch (err) { showStatus('Erreur projet #' + pid + ' : ' + err.message, 'error'); }
   }
   if (ok) showStatus(ok + ' liaison(s) créée(s)', 'success');
   renderProjetRasters();
+}
+
+// Enregistre durablement les reglages d'un raster deja lie (ordre, opacite,
+// fusion, visibilite, groupe) via l'upsert admin_link_image_to_projet
+// (conflit sur projet_id+nom_affiche -> UPDATE). Reutilise l'image_url et les
+// bounds existants (pas de nouveau SQL). Rasters en tuiles : editer via SQL.
+async function onSaveProjetRaster(id) {
+  const r = (window._prById || {})[id];
+  const tr = document.querySelector('tr[data-pr-id="' + id + '"]');
+  if (!r || !tr) return;
+  if (!r.image_url || !r.bounds_json) { showStatus('Raster en tuiles : édition via SQL', 'error'); return; }
+  const ordreV = tr.querySelector('.pr-ordre').value;
+  const ordre = ordreV !== '' ? parseInt(ordreV, 10) : 100;
+  const opa = parseFloat(tr.querySelector('.pr-opa').value);
+  const blend = tr.querySelector('.pr-blend').value || 'normal';
+  const vis = tr.querySelector('.pr-vis').checked;
+  const grp = (tr.querySelector('.pr-grp').value || '').trim() || null;
+  try {
+    await rpc('admin_link_image_to_projet', {
+      p_projet_id: r.projet_id, p_nom_affiche: r.nom_affiche,
+      p_image_url: r.image_url, p_bounds_json: r.bounds_json,
+      p_opacity: isNaN(opa) ? 0.85 : opa, p_blend_mode: blend,
+      p_group_name: grp, p_ordre: isNaN(ordre) ? 100 : ordre,
+      p_visible_default: vis
+    });
+    showStatus('Raster mis à jour', 'success');
+    renderProjetRasters();
+  } catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 
 async function onUnlinkProjetRaster(id) {
@@ -2633,29 +2681,100 @@ async function onDeleteDefinition(id) {
   catch (err) { showStatus('Erreur : ' + err.message, 'error'); }
 }
 
+// Badge colore d'un statut d'association.
+function _assocStatutBadge(s) {
+  const m = { valide: ['#16a34a', 'validé'], hypothese: ['#d97706', 'hypothèse'],
+              propose: ['#2563eb', 'proposé'], rejete: ['#9ca3af', 'rejeté'] };
+  const x = m[s] || ['#6b7280', s || '?'];
+  return '<span style="background:' + x[0] + ';color:#fff;border-radius:8px;'
+    + 'padding:1px 7px;font-size:11px;white-space:nowrap">' + escapeHtml(x[1]) + '</span>';
+}
+// Cle de doublon : meme toponyme normalise + meme terme.
+function _assocDupKey(a) {
+  return (a.toponyme_normalise || (a.toponyme || '').toLowerCase())
+    + '|' + (a.terme_id || a.terme_texte || '');
+}
 async function renderLexiqueAssocs() {
   const c = document.getElementById('lexContent');
-  c.innerHTML = '<div class="block"><h2>Associations toponyme ↔ terme</h2><div id="assocArea"><div class="loader">Chargement…</div></div></div>';
+  c.innerHTML = '<div class="block"><h2>Associations toponyme ↔ terme</h2>'
+    + '<div class="toolbar">'
+    + '<input type="text" id="assocFilter" placeholder="Filtrer (toponyme, commune, terme, statut, auteur)…" style="min-width:260px">'
+    + '<button class="btn btn-mini btn-secondary" id="assocRefresh">Rafraîchir</button>'
+    + '</div>'
+    + '<div id="assocSummary" style="font-size:12px;color:#6b5a48;margin:8px 0"></div>'
+    + '<div id="assocArea"><div class="loader">Chargement…</div></div></div>';
+  document.getElementById('assocRefresh').onclick = renderLexiqueAssocs;
+  document.getElementById('assocFilter').oninput = function() { _assocRenderTable(this.value); };
   try {
-    const rows = await rpc('admin_list_assoc_lex', { p_limit: 200, p_offset: 0 });
+    const rows = await rpc('admin_list_assoc_lex', { p_limit: 5000, p_offset: 0 });
     lexiqueState.assocsRows = rows;
-    let h = '<table class="matrix"><thead><tr><th class="name-col">Toponyme</th><th>Commune</th><th>Terme</th><th>Statut</th><th>Action</th></tr></thead><tbody>';
-    rows.forEach(r => {
-      h += '<tr>'
-        + '<td class="name-cell">' + escapeHtml(r.toponyme) + '</td>'
-        + '<td>' + escapeHtml(r.commune || '—') + '</td>'
-        + '<td>' + escapeHtml(r.terme_texte || r.terme_id) + '</td>'
-        + '<td style="font-size:11px">' + escapeHtml(r.statut || '—') + '</td>'
-        + '<td class="actions">'
-        + '<button class="btn btn-mini btn-secondary" data-edit-assoc="' + r.id + '">✎</button> '
-        + '<button class="btn btn-mini btn-danger" data-del-assoc="' + r.id + '">×</button>'
-        + '</td></tr>';
-    });
-    h += '</tbody></table>';
-    document.getElementById('assocArea').innerHTML = h;
-    document.querySelectorAll('button[data-del-assoc]').forEach(b => b.onclick = () => onDeleteAssoc(b.dataset.delAssoc));
-    document.querySelectorAll('button[data-edit-assoc]').forEach(b => b.onclick = () => onEditAssoc(b.dataset.editAssoc));
-  } catch (err) { document.getElementById('assocArea').innerHTML = '<div class="loader" style="color:#c00">' + escapeHtml(err.message) + '</div>'; }
+    _assocRenderTable('');
+  } catch (err) {
+    document.getElementById('assocArea').innerHTML =
+      '<div class="loader" style="color:#c00">' + escapeHtml(err.message) + '</div>';
+  }
+}
+// Rendu detaille du tableau des associations, depuis lexiqueState.assocsRows.
+// Montre la valeur EXACTE du toponyme (+ sa forme normalisee), la commune et
+// son code, le terme corse, le statut, la date/auteur, et signale les
+// doublons (meme toponyme + terme enregistre plusieurs fois) : c'est ce qui
+// permet de comprendre pourquoi une association ne remonte pas cote carte
+// (la carte fait une correspondance EXACTE toponyme + code commune).
+function _assocRenderTable(filter) {
+  const all = lexiqueState.assocsRows || [];
+  const dupCount = {};
+  all.forEach(a => { const k = _assocDupKey(a); dupCount[k] = (dupCount[k] || 0) + 1; });
+  const f = (filter || '').trim().toLowerCase();
+  let rows = all;
+  if (f) rows = all.filter(a => [a.toponyme, a.commune, a.commune_code, a.terme_texte,
+    a.statut, a.created_by, a.microregion].some(v => (v || '').toString().toLowerCase().includes(f)));
+  // Tri toponyme normalise -> terme -> date : les doublons sont adjacents.
+  rows = rows.slice().sort((a, b) =>
+    (a.toponyme_normalise || '').localeCompare(b.toponyme_normalise || '')
+    || (a.terme_texte || '').localeCompare(b.terme_texte || '')
+    || (a.created_at || '').localeCompare(b.created_at || ''));
+  const byStatut = {};
+  all.forEach(a => { const s = a.statut || '?'; byStatut[s] = (byStatut[s] || 0) + 1; });
+  const nbDup = Object.keys(dupCount).reduce((s, k) => s + (dupCount[k] > 1 ? dupCount[k] - 1 : 0), 0);
+  const sum = document.getElementById('assocSummary');
+  if (sum) sum.innerHTML = '<b>' + all.length + '</b> association(s) — '
+    + Object.keys(byStatut).sort().map(s => _assocStatutBadge(s) + '&nbsp;' + byStatut[s]).join(' &nbsp; ')
+    + ' &nbsp;·&nbsp; <b style="color:#b45309">' + nbDup + '</b> doublon(s) a nettoyer'
+    + (f ? ' &nbsp;·&nbsp; <i>' + rows.length + ' affichée(s)</i>' : '');
+  let h = '<table class="matrix"><thead><tr>'
+    + '<th class="name-col">Toponyme (valeur exacte stockée)</th>'
+    + '<th>Commune</th><th>Terme corse</th><th>Statut</th><th>Créé</th><th>Action</th>'
+    + '</tr></thead><tbody>';
+  if (!rows.length) {
+    h += '<tr><td colspan="6" style="text-align:center;color:#999">Aucune association</td></tr>';
+  }
+  rows.forEach(r => {
+    const k = _assocDupKey(r), isDup = dupCount[k] > 1;
+    h += '<tr' + (isDup ? ' style="background:#fff7ed"' : '') + '>'
+      + '<td class="name-cell"><span style="font-family:monospace">'
+      + escapeHtml(r.toponyme || '—') + '</span>'
+      + (isDup ? ' <span title="Meme toponyme + terme enregistre ' + dupCount[k]
+        + ' fois" style="background:#f59e0b;color:#fff;border-radius:8px;padding:0 6px;'
+        + 'font-size:10px">doublon ×' + dupCount[k] + '</span>' : '')
+      + '<div style="font-size:10px;color:#999">normalisé : '
+      + escapeHtml(r.toponyme_normalise || '—') + '</div></td>'
+      + '<td>' + escapeHtml(r.commune || '—')
+      + '<div style="font-size:10px;color:#999">' + escapeHtml(r.commune_code || 'code manquant') + '</div></td>'
+      + '<td>' + (r.terme_texte ? escapeHtml(r.terme_texte)
+        : '<span style="color:#c00;font-size:11px">terme sans texte ('
+          + escapeHtml((r.terme_id || '').slice(0, 8)) + '…)</span>') + '</td>'
+      + '<td>' + _assocStatutBadge(r.statut) + '</td>'
+      + '<td style="font-size:11px;color:#777">' + escapeHtml((r.created_at || '').slice(0, 10))
+      + '<div>' + escapeHtml(r.created_by || '—') + '</div></td>'
+      + '<td class="actions">'
+      + '<button class="btn btn-mini btn-secondary" data-edit-assoc="' + r.id + '">✎</button> '
+      + '<button class="btn btn-mini btn-danger" data-del-assoc="' + r.id + '">×</button>'
+      + '</td></tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('assocArea').innerHTML = h;
+  document.querySelectorAll('button[data-del-assoc]').forEach(b => b.onclick = () => onDeleteAssoc(b.dataset.delAssoc));
+  document.querySelectorAll('button[data-edit-assoc]').forEach(b => b.onclick = () => onEditAssoc(b.dataset.editAssoc));
 }
 async function onDeleteAssoc(id) {
   if (!confirm('Supprimer cette association ?')) return;
