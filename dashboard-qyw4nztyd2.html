@@ -473,9 +473,7 @@ async function renderProjetRasters() {
     if (!rows || !rows.length) { area.innerHTML = '<div style="font-size:12px;color:#888">Aucun raster lié à un projet.</div>'; return; }
     window._prById = {};
     const BLENDS = ['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten'];
-    let h = '<div style="font-size:11px;color:#888;margin-bottom:4px">Modifie ordre / opacité / fusion / visibilité / groupe puis <b>Enregistrer</b> (durable, visible par tous). Ordre plus grand = au-dessus.</div>';
-    h += '<table class="matrix"><thead><tr><th>Projet</th><th class="name-col">Nom</th><th>Image</th><th>Ordre</th><th>Opac.</th><th>Fusion</th><th>Visible</th><th>Groupe</th><th>Actif</th><th>Action</th></tr></thead><tbody>';
-    rows.forEach(r => {
+    function rowHtml(r) {
       window._prById[r.id] = r;
       const pn = (projets.find(p => p.id == r.projet_id) || {}).nom || ('#' + r.projet_id);
       const editable = !!(r.image_url && r.bounds_json);
@@ -484,7 +482,7 @@ async function renderProjetRasters() {
         : ('tuiles: ' + escapeHtml(r.raster_folder || '—'));
       const dis = editable ? '' : ' disabled';
       const blendOpts = BLENDS.map(b => '<option value="' + b + '"' + ((r.blend_mode || 'normal') === b ? ' selected' : '') + '>' + b + '</option>').join('');
-      h += '<tr data-pr-id="' + r.id + '">'
+      return '<tr data-pr-id="' + r.id + '">'
         + '<td>' + escapeHtml(pn) + ' <span style="color:#888;font-size:10px">#' + r.projet_id + '</span></td>'
         + '<td class="name-cell">' + escapeHtml(r.nom_affiche || '') + '</td>'
         + '<td style="font-size:11px">' + img + '</td>'
@@ -499,12 +497,43 @@ async function renderProjetRasters() {
         + '<button class="btn btn-mini btn-danger" data-unlink-pr="' + r.id + '">Retirer</button>'
         + '</td>'
         + '</tr>';
+    }
+    // Grouper par group_name (parent/enfant). Groupes tries alpha ; dans chaque
+    // groupe, rasters tries par ordre puis nom.
+    const groups = {}, order = [];
+    rows.forEach(r => {
+      const g = (r.group_name && String(r.group_name).trim()) ? String(r.group_name).trim() : 'Sans groupe';
+      if (!groups[g]) { groups[g] = []; order.push(g); }
+      groups[g].push(r);
     });
-    h += '</tbody></table>';
+    order.sort((a, b) => a.localeCompare(b));
+    order.forEach(g => groups[g].sort((a, b) =>
+      ((a.ordre || 0) - (b.ordre || 0)) || String(a.nom_affiche || '').localeCompare(String(b.nom_affiche || ''))));
+    let h = '<div style="font-size:11px;color:#888;margin-bottom:4px">Rasters groupés par catégorie (clic sur l\'en-tête = plier/déplier). Modifie ordre / opacité / fusion / visibilité / groupe puis <b>Enregistrer</b> (durable, visible par tous). Ordre plus grand = au-dessus.</div>';
+    h += '<table class="matrix"><thead><tr><th>Projet</th><th class="name-col">Nom</th><th>Image</th><th>Ordre</th><th>Opac.</th><th>Fusion</th><th>Visible</th><th>Groupe</th><th>Actif</th><th>Action</th></tr></thead>';
+    order.forEach((g, gi) => {
+      const gl = groups[g];
+      const gid = 'prg' + gi;
+      h += '<tbody data-prgroup="' + gid + '">';
+      h += '<tr class="pr-grp-header" style="cursor:pointer;background:#efe7d8">'
+        + '<td colspan="10" style="font-weight:700;color:#5a3a1a;font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:6px 8px;border-top:2px solid #d8cbb2">'
+        + '<span class="pr-caret" style="display:inline-block;width:12px">▾</span> '
+        + escapeHtml(g) + ' <span style="color:#8b7355;font-weight:400">(' + gl.length + ')</span></td></tr>';
+      gl.forEach(r => { h += rowHtml(r); });
+      h += '</tbody>';
+    });
+    h += '</table>';
     area.innerHTML = h;
     area.querySelectorAll('button[data-unlink-pr]').forEach(b => b.onclick = () => onUnlinkProjetRaster(b.dataset.unlinkPr));
     area.querySelectorAll('button[data-toggle-actif]').forEach(b => b.onclick = () => onToggleProjetRasterActif(b.dataset.toggleActif, b.dataset.cur === '1'));
     area.querySelectorAll('button[data-save-pr]').forEach(b => b.onclick = () => onSaveProjetRaster(b.dataset.savePr));
+    area.querySelectorAll('tr.pr-grp-header').forEach(hdr => hdr.onclick = () => {
+      const tb = hdr.parentNode;
+      const collapsed = tb.classList.toggle('pr-collapsed');
+      const caret = hdr.querySelector('.pr-caret');
+      if (caret) caret.textContent = collapsed ? '▸' : '▾';
+      tb.querySelectorAll('tr:not(.pr-grp-header)').forEach(tr => { tr.style.display = collapsed ? 'none' : ''; });
+    });
   } catch (err) {
     area.innerHTML = '<div class="loader" style="color:#c00">Erreur : ' + escapeHtml(err.message) + '</div>';
   }
