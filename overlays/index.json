@@ -1,6 +1,6 @@
 {
   "base_url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/",
-  "count": 22,
+  "count": 39,
   "overlays": [
     {
       "file": "lumito-A05-ombrage-multi.png",
@@ -395,6 +395,312 @@
         [
           42.419588269351664,
           9.400440147056846
+        ]
+      ]
+    },
+    {
+      "file": "PIETRA_PICCHITA-A05-ombrage-multi.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/PIETRA_PICCHITA-A05-ombrage-multi.png",
+      "name": "LiDAR PIETRA_PICCHITA - A05 Ombrage multi-directionnel",
+      "site": "PIETRA_PICCHITA",
+      "label": "PIETRA_PICCHITA",
+      "code": "A05",
+      "bounds": [
+        [
+          42.44540122674636,
+          9.44779270848695
+        ],
+        [
+          42.449278441677535,
+          9.453027653031508
+        ]
+      ]
+    },
+    {
+      "file": "PIETRA_PICCHITA-A09-mnt-couches.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/PIETRA_PICCHITA-A09-mnt-couches.png",
+      "name": "LiDAR PIETRA_PICCHITA - A09 MNT par couches",
+      "site": "PIETRA_PICCHITA",
+      "label": "PIETRA_PICCHITA",
+      "code": "A09",
+      "bounds": [
+        [
+          42.44540122674636,
+          9.44779270848695
+        ],
+        [
+          42.449278441677535,
+          9.453027653031508
+        ]
+      ]
+    },
+    {
+      "file": "PIETRA_PICCHITA-A24-quality-couches.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/PIETRA_PICCHITA-A24-quality-couches.png",
+      "name": "LiDAR PIETRA_PICCHITA - A24 Quality (MSII) par couches",
+      "site": "PIETRA_PICCHITA",
+      "label": "PIETRA_PICCHITA",
+      "code": "A24",
+      "bounds": [
+        [
+          42.44540122674636,
+          9.44779270848695
+        ],
+        [
+          42.449278441677535,
+          9.453027653031508
+        ]
+      ]
+    },
+    {
+      "file": "PIETRA_PICCHITA-C01-rrim.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/PIETRA_PICCHITA-C01-rrim.png",
+      "name": "LiDAR PIETRA_PICCHITA - C01 RRIM",
+      "site": "PIETRA_PICCHITA",
+      "label": "PIETRA_PICCHITA",
+      "code": "C01",
+      "bounds": [
+        [
+          42.44540122674636,
+          9.44779270848695
+        ],
+        [
+          42.449278441677535,
+          9.453027653031508
+        ]
+      ]
+    },
+    {
+      "file": "PIETRA_PICCHITA-C05-rrim-vo.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/PIETRA_PICCHITA-C05-rrim-vo.png",
+      "name": "LiDAR PIETRA_PICCHITA - C05 RRIM x VO",
+      "site": "PIETRA_PICCHITA",
+      "label": "PIETRA_PICCHITA",
+      "code": "C05",
+      "bounds": [
+        [
+          42.44540122674636,
+          9.44779270848695
+        ],
+        [
+          42.449278441677535,
+          9.453027653031508
+        ]
+      ]
+    },
+    {
+      "file": "PIETRA_PICCHITA-C10-local-dominance.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/PIETRA_PICCHITA-C10-local-dominance.png",
+      "name": "LiDAR PIETRA_PICCHITA - C10 Local Dominance",
+      "site": "PIETRA_PICCHITA",
+      "label": "PIETRA_PICCHITA",
+      "code": "C10",
+      "bounds": [
+        [
+          42.44540122674636,
+          9.44779270848695
+        ],
+        [
+          42.449278441677535,
+          9.453027653031508
+        ]
+      ]
+    },
+    {
+      "file": "PIETRA_PICCHITA-C13-rrim-sf-couches.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/PIETRA_PICCHITA-C13-rrim-sf-couches.png",
+      "name": "LiDAR PIETRA_PICCHITA - C13 RRIM x couches SF",
+      "site": "PIETRA_PICCHITA",
+      "label": "PIETRA_PICCHITA",
+      "code": "C13",
+      "bounds": [
+        [
+          42.44540122674636,
+          9.44779270848695
+        ],
+        [
+          42.449278441677535,
+          9.453027653031508
+        ]
+      ]
+    },
+    {
+      "file": "PIETRA_PICCHITA-C16-composite-krita1.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/PIETRA_PICCHITA-C16-composite-krita1.png",
+      "name": "LiDAR PIETRA_PICCHITA - C16 Composite Krita 1",
+      "site": "PIETRA_PICCHITA",
+      "label": "PIETRA_PICCHITA",
+      "code": "C16",
+      "bounds": [
+        [
+          42.44540122674636,
+          9.44779270848695
+        ],
+        [
+          42.449278441677535,
+          9.453027653031508
+        ]
+      ]
+    },
+    {
+      "file": "Tafoni-A05-ombrage-multi.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/Tafoni-A05-ombrage-multi.png",
+      "name": "LiDAR Formation_rocheuse_à_tafoni - A05 Ombrage multi-directionnel",
+      "site": "Tafoni",
+      "label": "Formation_rocheuse_à_tafoni",
+      "code": "A05",
+      "bounds": [
+        [
+          42.79654410016707,
+          9.464759363341715
+        ],
+        [
+          42.80042270454995,
+          9.47002580356336
+        ]
+      ]
+    },
+    {
+      "file": "Tafoni-A09-mnt-couches.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/Tafoni-A09-mnt-couches.png",
+      "name": "LiDAR Formation_rocheuse_à_tafoni - A09 MNT par couches",
+      "site": "Tafoni",
+      "label": "Formation_rocheuse_à_tafoni",
+      "code": "A09",
+      "bounds": [
+        [
+          42.79654410016707,
+          9.464759363341715
+        ],
+        [
+          42.80042270454995,
+          9.47002580356336
+        ]
+      ]
+    },
+    {
+      "file": "Tafoni-A24-quality-couches.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/Tafoni-A24-quality-couches.png",
+      "name": "LiDAR Formation_rocheuse_à_tafoni - A24 Relief signé multi-échelle (MSII)",
+      "site": "Tafoni",
+      "label": "Formation_rocheuse_à_tafoni",
+      "code": "A24",
+      "bounds": [
+        [
+          42.79654410016707,
+          9.464759363341715
+        ],
+        [
+          42.80042270454995,
+          9.47002580356336
+        ]
+      ]
+    },
+    {
+      "file": "Tafoni-C01-rrim.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/Tafoni-C01-rrim.png",
+      "name": "LiDAR Formation_rocheuse_à_tafoni - C01 RRIM",
+      "site": "Tafoni",
+      "label": "Formation_rocheuse_à_tafoni",
+      "code": "C01",
+      "bounds": [
+        [
+          42.79654410016707,
+          9.464759363341715
+        ],
+        [
+          42.80042270454995,
+          9.47002580356336
+        ]
+      ]
+    },
+    {
+      "file": "Tafoni-C05-rrim-vo.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/Tafoni-C05-rrim-vo.png",
+      "name": "LiDAR Formation_rocheuse_à_tafoni - C05 RRIM x VO",
+      "site": "Tafoni",
+      "label": "Formation_rocheuse_à_tafoni",
+      "code": "C05",
+      "bounds": [
+        [
+          42.79654410016707,
+          9.464759363341715
+        ],
+        [
+          42.80042270454995,
+          9.47002580356336
+        ]
+      ]
+    },
+    {
+      "file": "Tafoni-C10-local-dominance.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/Tafoni-C10-local-dominance.png",
+      "name": "LiDAR Formation_rocheuse_à_tafoni - C10 Local Dominance",
+      "site": "Tafoni",
+      "label": "Formation_rocheuse_à_tafoni",
+      "code": "C10",
+      "bounds": [
+        [
+          42.79654410016707,
+          9.464759363341715
+        ],
+        [
+          42.80042270454995,
+          9.47002580356336
+        ]
+      ]
+    },
+    {
+      "file": "Tafoni-C13-rrim-sf-couches.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/Tafoni-C13-rrim-sf-couches.png",
+      "name": "LiDAR Formation_rocheuse_à_tafoni - C13 RRIM x couches SF",
+      "site": "Tafoni",
+      "label": "Formation_rocheuse_à_tafoni",
+      "code": "C13",
+      "bounds": [
+        [
+          42.79654410016707,
+          9.464759363341715
+        ],
+        [
+          42.80042270454995,
+          9.47002580356336
+        ]
+      ]
+    },
+    {
+      "file": "Tafoni-C16-composite-krita1.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/Tafoni-C16-composite-krita1.png",
+      "name": "LiDAR Formation_rocheuse_à_tafoni - C16 Composite Krita 1",
+      "site": "Tafoni",
+      "label": "Formation_rocheuse_à_tafoni",
+      "code": "C16",
+      "bounds": [
+        [
+          42.79654410016707,
+          9.464759363341715
+        ],
+        [
+          42.80042270454995,
+          9.47002580356336
+        ]
+      ]
+    },
+    {
+      "file": "Tafoni-L14-consensus.png",
+      "url": "https://clairecasanova-rgb.github.io/raster-tiles-corse/overlays/Tafoni-L14-consensus.png",
+      "name": "LiDAR Formation_rocheuse_à_tafoni - L14 Consensus archeo",
+      "site": "Tafoni",
+      "label": "Formation_rocheuse_à_tafoni",
+      "code": "L14",
+      "bounds": [
+        [
+          42.79654410016707,
+          9.464759363341715
+        ],
+        [
+          42.80042270454995,
+          9.47002580356336
         ]
       ]
     }
